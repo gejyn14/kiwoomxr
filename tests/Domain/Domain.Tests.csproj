@@ -11,7 +11,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
     <Compile Include="../../quest/Assets/SpatialTrading/Domain/*.cs" Link="Domain/%(Filename)%(Extension)" />
-    <Compile Include="../../quest/Assets/SpatialTrading/Tests/EditMode/ShellActionTests.cs" Link="ShellActionTests.cs" />
+    <Compile Include="../../quest/Assets/SpatialTrading/Runtime/Market/GatewayContract.cs" Link="Market/GatewayContract.cs" />
+    <Compile Include="../../quest/Assets/SpatialTrading/Tests/EditMode/*.cs" Link="Tests/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,9 @@
 {
   "name": "SpatialTrading.Domain.Tests",
-  "references": ["SpatialTrading.Domain"],
+  "references": ["SpatialTrading.Domain", "SpatialTrading.Runtime"],
   "includePlatforms": ["Editor"],
   "optionalUnityReferences": ["TestAssemblies"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll", "Newtonsoft.Json.dll"],
   "autoReferenced": false
 }

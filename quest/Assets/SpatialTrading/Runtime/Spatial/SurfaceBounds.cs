@@ -26,8 +26,8 @@ namespace SpatialTrading.Spatial
             var offset = transform.position - _head.position;
             var distance = offset.magnitude;
             if (distance > 1.8f) transform.position = _head.position + offset.normalized * 1.8f;
-            else if (distance < 0.35f)
-                transform.position = _head.position + (distance > 0.001f ? offset.normalized : _head.forward) * 0.35f;
+            else if (distance < 0.5f)
+                transform.position = _head.position + (distance > 0.001f ? offset.normalized : _head.forward) * 0.5f;
             var position = transform.position;
             position.y = Mathf.Clamp(position.y, _head.position.y - 0.65f, _head.position.y + 0.35f);
             transform.position = position;

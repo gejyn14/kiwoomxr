@@ -4,6 +4,7 @@
     "com.meta.xr.sdk.interaction": "205.0.0",
     "com.meta.xr.sdk.interaction.ovr": "205.0.0",
     "com.unity.inputsystem": "1.14.2",
+    "com.unity.nuget.newtonsoft-json": "3.2.2",
     "com.unity.test-framework": "1.6.0",
     "com.unity.ugui": "2.0.0",
     "com.unity.xr.hands": "1.7.2",

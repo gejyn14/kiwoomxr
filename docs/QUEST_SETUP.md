@@ -88,7 +88,7 @@ Install an official .NET 8 SDK, then run:
 python3 scripts/verify_m1_sources.py
 ```
 
-Use `DOTNET=/absolute/path/to/dotnet` if it is not on PATH. This session used SDK 8.0.425 installed separately in a temporary tools directory. The tests compile the actual Unity domain files and the shared NUnit test file; they do not mock or compile Unity/Meta runtime classes. Raw TRX goes to `artifacts/milestone1/domain/domain.trx`.
+Use `DOTNET=/absolute/path/to/dotnet` if it is not on PATH. This session used SDK 8.0.425 installed separately in a temporary tools directory. The tests compile the actual domain files, the engine-independent gateway decoder and shared NUnit tests; they do not substitute for Unity/Meta runtime validation. New TRX results go to unique `artifacts/domain/test-*/domain.trx` directories. The initial runner reused `artifacts/milestone1/domain/domain.trx`; that path was overwritten by the first expanded test run on 2026-09-18. The historical evidence record retains its originally observed hash, but that original TRX is no longer at the mutable path. Unity XML results remain separately retained.
 
 ## Install and verify on Quest 3
 

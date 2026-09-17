@@ -1,0 +1,172 @@
+{
+  "recorded_date": "2026-09-18",
+  "milestone": "M2 foundation and spatial design iteration",
+  "status": "SOFTWARE_BOUNDARY_VERIFIED_LIVE_INTEGRATION_BLOCKED_BY_MISSING_SPEC",
+  "scope": "Unity Editor simulator and local specification-gated gateway; no brokerage calls, no physical headset, no orders",
+  "tests": {
+    "shared_dotnet": 59,
+    "shared_unity": 59,
+    "gateway_pytest": 16,
+    "gateway_deprecation_warnings": 2
+  },
+  "apk": {
+    "result": "PASS",
+    "apk_sha256": "1da2ee4b4b3c8a326caba16f618c24cdd2278be6295e302714d14ed1dc3db92c",
+    "bytes": 101338969,
+    "package": "com.kiwoomxr.spatialshell",
+    "min_sdk": 32,
+    "target_sdk": 36,
+    "abis": [
+      "arm64-v8a"
+    ],
+    "permissions": [
+      "android.permission.INTERNET",
+      "com.oculus.permission.HAND_TRACKING",
+      "com.kiwoomxr.spatialshell.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+    ],
+    "known_local_sdk_token_count": 1,
+    "known_token_scan": "PASS",
+    "scope": "Manifest, filenames, architecture, known SDK token bytes; not device acceptance or a complete secret audit",
+    "errors": []
+  },
+  "simulator": {
+    "preview": {
+      "quote_state": "Delayed",
+      "reason": "SYNTHETIC_PREVIEW",
+      "price_text": {
+        "fontSize": 60.0,
+        "width": 590.0,
+        "height": 100.0,
+        "characters": 10,
+        "visibleCharacters": 9
+      }
+    },
+    "gateway": {
+      "preview": false,
+      "quoteState": "Unavailable",
+      "quoteReason": "BLOCKED_BY_MISSING_SPEC:K-01",
+      "chartState": "Unavailable",
+      "bookState": "Unavailable"
+    },
+    "manual_preview_steps": [
+      {
+        "control": "SelectSkHynix",
+        "component": "closed",
+        "instrument": "shell:000660",
+        "revision": 1,
+        "captured_at": "2026-09-17T15:40:48.0307420+00:00",
+        "sha256": "1f15cf6859c55d4a4597ac4112e59062cd1e9d6dfb0bcd0cafc689fe5eee3956"
+      },
+      {
+        "control": "OpenOrderBook",
+        "component": "OrderBook",
+        "instrument": "shell:000660",
+        "revision": 2,
+        "captured_at": "2026-09-17T15:41:03.1836510+00:00",
+        "sha256": "ede8f1919ed8ad62b49f4663080e0812839fa5cd5a127b90836e5ccef69acb62"
+      },
+      {
+        "control": "CompareOther",
+        "component": "Compare",
+        "instrument": "shell:000660",
+        "revision": 3,
+        "captured_at": "2026-09-17T15:41:18.4063280+00:00",
+        "sha256": "913759dd517117e311a0d56821b6eeb4f9e3c4fe9a555c342b70072098241542"
+      },
+      {
+        "control": "SelectSamsung",
+        "component": "closed",
+        "instrument": "shell:005930",
+        "revision": 4,
+        "captured_at": "2026-09-17T15:41:33.5588650+00:00",
+        "sha256": "dede44c330cfcb93a712a7e02069e6335100e83dc3984d2aa956908b54304f09"
+      }
+    ],
+    "manual_preview_check": "Captured states rechecked against existing self-comparison rule; original harness expectation failure preserved.",
+    "manual_gateway_check": "PASS: simulated controller SELECT_INSTRUMENT and OPEN_ORDERBOOK, revisions 1 and 2; all data stays unavailable.",
+    "disconnection": "PASS: stopped owned gateway; client showed DISCONNECTED with no synthetic fallback; gateway restarted.",
+    "final_session_log_check": "No compiler errors or NullReference/MissingReference/Argument/InvalidOperation exception indicators observed."
+  },
+  "first_failures": [
+    {
+      "kind": "rendering",
+      "evidence": "artifacts/milestone1/simulator/redesign-initial.png",
+      "repair": "Price line box increased, font reduced; input focus transitions refresh footer."
+    },
+    {
+      "kind": "null_response_decode",
+      "evidence": "artifacts/milestone1/simulator/gateway-unavailable-state.json",
+      "repair": "Replaced default JsonUtility DTOs with strict JSON token decoding; end-to-end verified."
+    },
+    {
+      "kind": "new_dependency_test_reference",
+      "evidence": "artifacts/milestone1/unity/test-20260917T154742Z-rB9X5x/editor.log",
+      "repair": "Explicit Newtonsoft reference in test assembly; subsequent 59-test run passed."
+    },
+    {
+      "kind": "controller_harness_expectation",
+      "evidence": "artifacts/milestone1/simulator/redesign-SelectSamsung-state.json",
+      "repair": "Verified existing self-comparison removal rule and observed revision; not counted as a passing original harness run."
+    }
+  ],
+  "artifacts": {
+    "dotnet_tests": {
+      "path": "artifacts/domain/test-20260917T154752Z-2ez1bD/domain.trx",
+      "sha256": "8f8d8ddf21b00191d57f5566a34f979a80e4171b67e1725254332d7343b7afb9",
+      "bytes": 75253
+    },
+    "unity_tests": {
+      "path": "artifacts/milestone1/unity/test-20260917T154851Z-1ynhRR/editmode.xml",
+      "sha256": "705200e6666a299f5c8e49b6e788adc9b1d8ff29892eea3184d4ec2920516180",
+      "bytes": 65371
+    },
+    "apk_inspection": {
+      "path": "artifacts/milestone1/unity/build-20260917T155918Z-PVkMKJ/apk-inspection.json",
+      "sha256": "df0799d3617f0d1fa472ad72d0a06bbce59cbb722aa924d43d53e2e51bafdcbd",
+      "bytes": 619
+    },
+    "preview_capture": {
+      "path": "docs/images/milestone2-focus.png",
+      "sha256": "5dd3c9a4d66bff31bf4424efdaf17fd64a7ad4e1df537c85464c8a509eb2b7d7",
+      "bytes": 626875
+    },
+    "gateway_capture": {
+      "path": "docs/images/milestone2-gateway.png",
+      "sha256": "16cb83e300b0d561a6dfc25861e410b4dd850bdc214b76c79101e7e5fe4ce08b",
+      "bytes": 622003
+    },
+    "preview_state": {
+      "path": "artifacts/milestone1/simulator/m2-focus-verified-state.json",
+      "sha256": "d244a8e312a0059f3326c6778187e089d77823541cf7c3a22dfb3266f004ec69",
+      "bytes": 11299
+    },
+    "gateway_state": {
+      "path": "artifacts/milestone1/simulator/m2-gateway-verified-state.json",
+      "sha256": "68b4887afefeb12061a051e2c3c942e2a2fbdd08588fc1981c25f3a94e0282da",
+      "bytes": 11321
+    },
+    "disconnected_state": {
+      "path": "artifacts/milestone1/simulator/gateway-disconnected-state.json",
+      "sha256": "3ba63f638d7f7dacc0cd65c765e05879fda792b5a409746203dfa21d2759014c",
+      "bytes": 11466
+    },
+    "controller_selection": {
+      "path": "artifacts/milestone1/simulator/m2-gateway-SelectSkHynix-state.json",
+      "sha256": "388df48403e1cb8c2f01a9bc109563874288570598ef1855821e88c23d2c334e",
+      "bytes": 11467
+    },
+    "controller_book": {
+      "path": "artifacts/milestone1/simulator/m2-gateway-OpenOrderBook-state.json",
+      "sha256": "23ab541e12cf835eec13aa90b42c2182d13ab8d530a099ec598b487856c711ac",
+      "bytes": 11487
+    }
+  },
+  "not_verified": [
+    "Kiwoom authentication/REST/WebSocket",
+    "Gemini voice/multimodal",
+    "real order execution",
+    "physical Quest hands/reach/passthrough/performance",
+    "full accessibility integration"
+  ],
+  "verification_order_note": "Simulator captures and 59 shared tests precede the final cancellation cleanup ordering adjustment (abort before stopping enumerators). Final APK rebuilt and inspected afterward. In-flight cancellation stress remains an M9 gate."
+}

@@ -25,3 +25,9 @@ TMP Essential Resources were imported by Unity from the resolved `com.unity.ugui
 - [EmojiOne attribution](<../quest/Assets/TextMesh Pro/Sprites/EmojiOne Attribution.txt>)
 
 These imported resources accompany TMP settings and fallback assets. Keep their notices when redistributing those assets or the built prototype.
+
+## Newtonsoft JSON
+
+Gateway responses use Unity's official `com.unity.nuget.newtonsoft-json` 3.2.2 package. The [.NET package documentation](https://docs.unity3d.com/Packages/com.unity.nuget.newtonsoft-json@3.2/manual/index.html) identifies the corresponding Newtonsoft.Json version as 13.0.2, also pinned in the shared test harness. Explicit token parsing preserves JSON null and decimal strings without reflection-based object construction.
+
+The resolved package's complete third-party notices are included as a Unity resource in [NewtonsoftNotices.txt](../quest/Assets/SpatialTrading/Resources/NewtonsoftNotices.txt) so they accompany the build. The Unity package wrapper retains its own license as distributed through Package Manager.

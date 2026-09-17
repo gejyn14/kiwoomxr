@@ -42,3 +42,11 @@ tests/**/TestResults/
 /docs/*.pkg
 /docs/*.dmg
 /docs/*.dmg.zip
+
+# Gateway development environment and local state.
+gateway/.venv/
+**/__pycache__/
+.pytest_cache/
+*.pyc
+gateway/.state/
+quest/mono_crash.*

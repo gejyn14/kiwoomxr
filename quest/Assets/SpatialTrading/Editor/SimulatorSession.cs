@@ -4,6 +4,8 @@ using System.Linq;
 using Oculus.Interaction;
 using SpatialTrading.Interfaces;
 using SpatialTrading.Spatial;
+using SpatialTrading.Market;
+using TMPro;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEngine;
@@ -53,6 +55,7 @@ namespace SpatialTrading.Editor
             var shell = Object.FindFirstObjectByType<FocusShell>();
             var rig = Object.FindFirstObjectByType<OVRCameraRig>();
             if (shell == null || rig == null) return;
+            var market = Object.FindFirstObjectByType<MarketDataSession>();
             var snapshot = new Snapshot
             {
                 capturedAt = DateTimeOffset.UtcNow.ToString("O"),
@@ -60,6 +63,11 @@ namespace SpatialTrading.Editor
                 selectedInstrument = shell.State.SelectedInstrument.Id,
                 secondaryComponent = shell.State.SecondaryComponent?.ToString() ?? "closed",
                 contextRevision = shell.State.Revision,
+                preview = market != null && market.IsPreview,
+                quoteState = market?.Quote(shell.State.SelectedInstrument.Code).State.ToString(),
+                quoteReason = market?.Quote(shell.State.SelectedInstrument.Code).Reason,
+                chartState = market?.Candles(shell.State.SelectedInstrument.Code).State.ToString(),
+                bookState = market?.Book(shell.State.SelectedInstrument.Code).State.ToString(),
                 applicationFocused = Application.isFocused,
                 shellFocused = shell.HasInteractionFocus,
                 xrInputFocus = OVRManager.hasInputFocus,
@@ -80,6 +88,13 @@ namespace SpatialTrading.Editor
                         target = ray.CandidateProperties is RayInteractor.RayCandidateProperties candidate && candidate.ClosestInteractable != null
                             ? PathOf(candidate.ClosestInteractable.transform) : "none"
                     }).ToArray(),
+                priceText = Object.FindObjectsByType<TMP_Text>(FindObjectsSortMode.None)
+                    .Where(label => label.name == "Price").Select(label => new TextSnapshot
+                    {
+                        fontSize = label.fontSize, width = label.rectTransform.rect.width, height = label.rectTransform.rect.height,
+                        characters = label.textInfo.characterCount,
+                        visibleCharacters = label.textInfo.characterInfo.Take(label.textInfo.characterCount).Count(character => character.isVisible)
+                    }).FirstOrDefault(),
                 buttons = Object.FindObjectsByType<ShellButton>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                     .Select(button => new ButtonSnapshot
                     {
@@ -115,6 +130,8 @@ namespace SpatialTrading.Editor
         {
             public string capturedAt, scope, selectedInstrument, secondaryComponent;
             public long contextRevision;
+            public bool preview;
+            public string quoteState, quoteReason, chartState, bookState;
             public bool applicationFocused, shellFocused, xrInputFocus;
             public string activeController, connectedControllers;
             public float rightTrigger;
@@ -122,6 +139,12 @@ namespace SpatialTrading.Editor
             public PoseSnapshot[] surfaces;
             public ButtonSnapshot[] buttons;
             public RaySnapshot[] rays;
+            public TextSnapshot priceText;
+        }
+        [Serializable] private sealed class TextSnapshot
+        {
+            public float fontSize, width, height;
+            public int characters, visibleCharacters;
         }
         [Serializable] private sealed class RaySnapshot
         {

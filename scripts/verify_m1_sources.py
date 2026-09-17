@@ -28,11 +28,13 @@ for path in (source / "Domain").glob("*.cs"):
     text = path.read_text()
     if re.search(r"^using (Unity|Oculus|Meta|System.Net)", text, re.MULTILINE):
         errors.append(f"Domain boundary violation: {path.name}")
-# No broker/Gemini/network execution or order actions exist in the M1 runtime.
+# Financial networking is confined to the reusable gateway adapter; no broker wire details or order execution in Quest.
 for path in list((source / "Runtime").rglob("*.cs")) + list((source / "Domain").glob("*.cs")):
     text = path.read_text()
-    if re.search(r"UnityWebRequest|HttpClient|ClientWebSocket|DllImport|CONFIRM_ORDER|CREATE_ORDER_DRAFT|OrderExecutor", text):
-        errors.append(f"Out-of-milestone runtime operation: {path.name}")
+    if re.search(r"DllImport|CONFIRM_ORDER|OrderExecutor|api\.kiwoom\.com|/oauth2/token|\b(?:ka|kt|au)\d{5}\b", text):
+        errors.append(f"Financial boundary violation: {path.name}")
+    if re.search(r"UnityWebRequest|HttpClient|ClientWebSocket", text) and path.name != "MarketDataSession.cs":
+        errors.append(f"Networking outside gateway interface: {path.name}")
 # Check filenames only. Never read, print, or copy private credential files.
 private_files = sum(1 for path in (QUEST / "Assets").rglob("*") if path.is_file() and
                     re.search(r"appkey|secretkey|access.?token|\.env$|credentials", path.name, re.IGNORECASE))
@@ -40,5 +42,5 @@ if private_files:
     errors.append(f"Private configuration filenames detected under Unity Assets: {private_files}")
 if errors:
     raise SystemExit("\n".join(errors))
-print("M1 source preflight PASS: version pins, pure domain, no order/network runtime, no private config filenames in Assets.")
+print("Source preflight PASS: version pins, pure domain, isolated gateway networking, no broker wire details/order execution/private config in Assets.")
 print("Scope: static source checks only; Unity/Android/headset behavior is not established.")

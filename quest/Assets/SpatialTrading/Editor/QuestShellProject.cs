@@ -8,6 +8,7 @@ using Oculus.Interaction.OVR.Editor.QuickActions;
 using SpatialTrading.Components;
 using SpatialTrading.Interfaces;
 using SpatialTrading.Spatial;
+using SpatialTrading.Market;
 using TMPro;
 using UnityEditor;
 using UnityEditor.Build;
@@ -32,10 +33,10 @@ namespace SpatialTrading.Editor
         public const string ScenePath = "Assets/SpatialTrading/Scenes/FocusShell.unity";
         private const string Generated = "Assets/Generated";
         private static TMP_FontAsset _font;
-        private static readonly Color Background = new Color(0.025f, 0.055f, 0.075f, 0.97f);
+        private static readonly Color Background = new Color(0.065f, 0.085f, 0.14f, 0.98f);
         private static readonly Color Ink = new Color(0.91f, 0.96f, 1f);
         private static readonly Color Muted = new Color(0.57f, 0.72f, 0.78f);
-        private static readonly Color Accent = new Color(0.40f, 0.89f, 0.75f);
+        private static readonly Color Accent = new Color(0.39f, 0.93f, 0.82f);
 
         [MenuItem("Spatial Trading/1. Configure Quest project")]
         public static void Configure()
@@ -112,6 +113,13 @@ namespace SpatialTrading.Editor
             config.bodyTrackingSupport = OVRProjectConfig.FeatureSupport.None;
             config.isPassthroughCameraAccessEnabled = false;
             OVRProjectConfig.CommitProjectConfig(config);
+            var debuggerSettings = AssetDatabase.LoadMainAssetAtPath("Assets/Resources/ImmersiveDebuggerSettings.asset");
+            if (debuggerSettings != null)
+            {
+                var serialized = new SerializedObject(debuggerSettings);
+                serialized.FindProperty("immersiveDebuggerDisplayAtStartup").boolValue = false;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+            }
             AssetDatabase.SaveAssets();
             Debug.Log("[M1] Quest configuration saved. Reopen the editor if Input System requests a restart.");
         }
@@ -197,39 +205,51 @@ namespace SpatialTrading.Editor
             var app = new GameObject("Focus Shell");
             var shell = app.AddComponent<FocusShell>();
             var layout = app.AddComponent<SeatedLayout>();
+            var market = app.AddComponent<MarketDataSession>();
+            market.Configure(true); // Explicit design preview; never a fallback from live failures.
             var sources = app.AddComponent<ShellInputSources>();
             sources.Configure(rig.transform);
 
-            var chart = Surface("Chart", 740, 540, head, cameraEye, true, out var chartCanvas);
+            var chart = Surface("Chart", 860, 590, head, cameraEye, true, out var chartCanvas);
             var chartView = chart.AddComponent<ChartComponent>();
-            Label(chartCanvas, "FOCUS  /  SYNTHETIC", 30, 51, 680, 28, 21, Accent);
-            var instrument = Label(chartCanvas, "삼성전자", 30, 91, 680, 48, 34, Ink);
-            var price = Label(chartCanvas, "71,200", 30, 144, 680, 60, 48, Ink);
-            var candlesObject = Rect("Synthetic candles", chartCanvas, 30, 224, 680, 217);
-            var candles = candlesObject.gameObject.AddComponent<SyntheticCandleGraphic>();
+            Label(chartCanvas, "K I W O O M   /   S P A C E", 34, 48, 460, 26, 16, Muted);
+            var sourceLabel = Label(chartCanvas, "PREVIEW  /  합성 시세", 604, 47, 224, 28, 16, Accent);
+            var instrument = Label(chartCanvas, "삼성전자", 32, 89, 796, 56, 40, Ink);
+            var price = Label(chartCanvas, "—", 30, 139, 590, 100, 60, Ink);
+            price.gameObject.name = "Price";
+            var change = Label(chartCanvas, "전일 대비 —", 35, 231, 550, 34, 24, Muted);
+            Card(chartCanvas, "Chart legend", 635, 202, 190, 48, new Color(.06f,.10f,.17f,.94f), 12);
+            Label(chartCanvas, "CANDLE  /  거래량", 650, 212, 165, 26, 17, Muted);
+            Image(chartCanvas, "Divider", 32, 283, 796, 1, new Color(.4f,.55f,.7f,.16f));
+            var period = Label(chartCanvas, "차트", 34, 300, 640, 28, 18, Muted);
+            var candlesObject = Rect("Candles", chartCanvas, 34, 341, 672, 172);
+            var candles = candlesObject.gameObject.AddComponent<CandleChartGraphic>();
             candles.raycastTarget = false;
-            Label(chartCanvas, "합성 데이터 · 실시간 시세 아님 · 주문 기능 없음", 30, 464, 680, 32, 21, Muted);
-            chartView.Configure(instrument, price, candles);
+            var high = Label(chartCanvas, "—", 720, 344, 106, 52, 17, Muted);
+            var low = Label(chartCanvas, "—", 720, 450, 106, 52, 17, Muted);
+            var freshness = Label(chartCanvas, "디자인 미리보기 · 실제 시세 아님", 34, 539, 700, 27, 17, Muted);
+            chartView.Configure(instrument, price, candles, change, sourceLabel, freshness, period, high, low);
 
-            var secondary = Surface("Secondary Component", 400, 560, head, cameraEye, true, out var secondaryCanvas);
+            var secondary = Surface("Secondary Component", 420, 590, head, cameraEye, true, out var secondaryCanvas);
             var secondaryView = secondary.AddComponent<SecondaryComponent>();
-            var secondaryTitle = Label(secondaryCanvas, "호가", 25, 53, 350, 40, 27, Ink);
-            var secondaryBody = Label(secondaryCanvas, "", 25, 106, 350, 355, 24, Ink);
+            Label(secondaryCanvas, "MARKET INSIGHT", 28, 50, 360, 26, 15, Accent);
+            var secondaryTitle = Label(secondaryCanvas, "호가", 28, 85, 360, 45, 33, Ink);
+            Image(secondaryCanvas, "Divider", 28, 143, 364, 1, new Color(.4f,.55f,.7f,.16f));
+            var secondaryBody = Label(secondaryCanvas, "", 28, 164, 364, 314, 24, Ink);
             secondaryView.Configure(secondaryTitle, secondaryBody);
-            Button(secondaryCanvas, "닫기", 25, 480, 350, 56, shell, ShellControl.CloseSecondary);
+            Button(secondaryCanvas, "닫기", 28, 510, 364, 56, shell, ShellControl.CloseSecondary);
 
-            var dock = Surface("Reachable Controls", 620, 280, head, cameraEye, false, out var controls);
-            Button(controls, "삼성전자", 20, 48, 280, 58, shell, ShellControl.SelectSamsung);
-            Button(controls, "SK하이닉스", 320, 48, 280, 58, shell, ShellControl.SelectSkHynix);
-            Button(controls, "차트", 20, 120, 135, 58, shell, ShellControl.OpenChart);
-            Button(controls, "호가", 168, 120, 135, 58, shell, ShellControl.OpenOrderBook);
-            Button(controls, "보유", 316, 120, 135, 58, shell, ShellControl.OpenPosition);
-            Button(controls, "비교", 464, 120, 136, 58, shell, ShellControl.CompareOther);
-            Button(controls, "앞으로 정렬", 20, 192, 180, 52, shell, ShellControl.Recenter);
-            Label(controls, "터치 / 포인터 + 집기\n상단 손잡이로 이동", 215, 190, 385, 56, 19, Muted);
-            var status = Label(controls, "FOCUS · 합성 데이터", 20, 252, 580, 22, 14, Muted);
+            var dock = Surface("Reachable Controls", 650, 270, head, cameraEye, false, out var controls);
+            Button(controls, "삼성전자", 20, 45, 297, 62, shell, ShellControl.SelectSamsung);
+            Button(controls, "SK하이닉스", 333, 45, 297, 62, shell, ShellControl.SelectSkHynix);
+            Button(controls, "차트", 20, 119, 143, 59, shell, ShellControl.OpenChart);
+            Button(controls, "호가", 175, 119, 144, 59, shell, ShellControl.OpenOrderBook);
+            Button(controls, "보유", 331, 119, 144, 59, shell, ShellControl.OpenPosition);
+            Button(controls, "비교", 487, 119, 143, 59, shell, ShellControl.CompareOther);
+            Button(controls, "앞으로 정렬", 20, 190, 185, 55, shell, ShellControl.Recenter);
+            var status = Label(controls, "터치로 선택 · 손잡이로 이동", 224, 198, 403, 38, 18, Muted);
             layout.Configure(head, chart.transform, dock.transform, secondary.transform);
-            shell.Configure(chartView, secondaryView, layout, sources, status);
+            shell.Configure(chartView, secondaryView, layout, sources, status, market);
 
             // An editor-visible starting pose; runtime places once from actual tracked head position.
             chart.transform.position = new Vector3(0, 1.1f, 0.95f);
@@ -244,6 +264,25 @@ namespace SpatialTrading.Editor
             Debug.Log("[M1] Focus Shell scene generated with vendor poke/ray/grab interactors.");
         }
 
+        [MenuItem("Spatial Trading/7. Connect to local gateway")]
+        public static void UseGateway() => SetPreview(false);
+        [MenuItem("Spatial Trading/8. Preview with synthetic data")]
+        public static void UsePreview() => SetPreview(true);
+        private static void SetPreview(bool preview)
+        {
+            var shell = Object.FindFirstObjectByType<FocusShell>();
+            if (shell == null) throw new BuildFailedException("Open the Focus Shell scene first.");
+            if (Application.isPlaying) shell.SetPreview(preview);
+            else
+            {
+                var market = Object.FindFirstObjectByType<MarketDataSession>();
+                market.Configure(preview);
+                EditorUtility.SetDirty(market);
+                EditorSceneManager.MarkSceneDirty(market.gameObject.scene);
+                EditorSceneManager.SaveScene(market.gameObject.scene);
+            }
+        }
+
         private static GameObject Surface(string name, float width, float height, Transform head, Camera eye,
             bool resizable, out RectTransform canvasTransform)
         {
@@ -256,9 +295,10 @@ namespace SpatialTrading.Editor
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
             canvas.worldCamera = eye;
-            Image(canvasTransform, "Background", 0, 0, width, height, Background);
-            Image(canvasTransform, "Grab handle", 0, 0, width, 37, new Color(0.075f, 0.18f, 0.20f));
-            Label(canvasTransform, resizable ? "잡아서 이동  ·  두 손으로 크기 조절" : "잡아서 이동", 18, 4, width - 36, 28, 18, Accent);
+            Card(canvasTransform, "Background", 0, 0, width, height, Background, 24);
+            Card(canvasTransform, "Grab handle", width / 2 - 45, 14, 90, 5, new Color(.4f,.58f,.68f,.6f), 2);
+            var hint = Label(canvasTransform, resizable ? "MOVE / RESIZE" : "CONTROL", width - 158, 8, 128, 22, 11, Muted);
+            hint.alignment = TextAlignmentOptions.Right;
             var collider = root.AddComponent<BoxCollider>();
             collider.center = new Vector3(0, (height / 2 - 18.5f) * 0.001f, 0);
             collider.size = new Vector3(width * 0.001f, 0.037f, 0.025f);
@@ -308,6 +348,16 @@ namespace SpatialTrading.Editor
             return graphic;
         }
 
+        private static SpatialCardGraphic Card(Transform parent, string name, float x, float y, float w, float h, Color color, float radius)
+        {
+            var graphic = Rect(name, parent, x, y, w, h).gameObject.AddComponent<SpatialCardGraphic>();
+            graphic.color = color;
+            graphic.BottomColor = new Color(color.r * .65f, color.g * .65f, color.b * .72f, color.a);
+            graphic.Radius = radius;
+            graphic.raycastTarget = false;
+            return graphic;
+        }
+
         private static TMP_Text Label(Transform parent, string text, float x, float y, float w, float h, float size, Color color)
         {
             var label = Rect("Label", parent, x, y, w, h).gameObject.AddComponent<TextMeshProUGUI>();
@@ -329,7 +379,7 @@ namespace SpatialTrading.Editor
 
         private static void Button(Transform parent, string text, float x, float y, float w, float h, FocusShell shell, ShellControl control)
         {
-            var image = Image(parent, control.ToString(), x, y, w, h, new Color(0.10f, 0.24f, 0.29f));
+            var image = Card(parent, control.ToString(), x, y, w, h, new Color(0.11f, 0.17f, 0.25f), 14);
             image.raycastTarget = true;
             var button = image.gameObject.AddComponent<ShellButton>();
             button.targetGraphic = image;
