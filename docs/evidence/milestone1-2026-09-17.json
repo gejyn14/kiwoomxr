@@ -1,0 +1,47 @@
+{
+  "observed_at": "2026-09-17T22:25:28.037454+09:00",
+  "milestone": "1",
+  "status": "IN_PROGRESS",
+  "domain_tests": {
+    "runtime": ".NET 8.0.425 (arm64)",
+    "passed": 23,
+    "failed": 0,
+    "total": 23,
+    "trx_sha256": "11b4d68a9cc19da9b9025234488ef1f44f49effdb5a49d5234ee58428b589100"
+  },
+  "unity_import": {
+    "exit_code": 198,
+    "status": "BLOCKED_LICENSE",
+    "reason": "No valid Unity Editor license found. Please activate your license.",
+    "log_sha256": "c9637059bce06639644a09c499ff24f3bc8a8181e4e5189a7eae2d0e3d3e2e87"
+  },
+  "unity_compile": "NOT_RUN",
+  "android_build": "NOT_RUN",
+  "headset_acceptance": "NOT_RUN",
+  "source_sha256": {
+    "quest/Assets/SpatialTrading/Domain/InstrumentRef.cs": "48cbe4be312d03a299e212db30e5960dd6d079f2454275bba8339963284210be",
+    "quest/Assets/SpatialTrading/Domain/ShellActions.cs": "0f14fa1b97050ad76a0d2ed707775859b08f5dc90ae8142efb1f8e21d561f05b",
+    "quest/Assets/SpatialTrading/Domain/ShellState.cs": "5f62971858fd9f297aa455463af8f3b51a588dcafdd17452d4b138c4eba6c5f9",
+    "quest/Assets/SpatialTrading/Domain/SpatialTrading.Domain.asmdef": "b24e04a75d7c424405b09df569041d1968d196969fce418805723787c2d463b8",
+    "quest/Assets/SpatialTrading/Domain/SyntheticCatalog.cs": "79eb735eddd5066fe84971e253eff185205b8d20c98889dc9304cf0367c4e7bf",
+    "quest/Assets/SpatialTrading/Editor/QuestShellProject.cs": "dc3b9c218936db53a502bf7a3d1af6d3d7b63fbbaf16e685471da9be4cc0ff41",
+    "quest/Assets/SpatialTrading/Editor/SpatialTrading.Editor.asmdef": "94275f9e46d1bdfefd4dcac69a59e5150886275873b6af9a220fa0a52ff1ebc1",
+    "quest/Assets/SpatialTrading/Runtime/Components/ChartComponent.cs": "33adb0b71a2d060a2905ffd4ed1e782e54c74ec0307fa63464620a9ad7cf0511",
+    "quest/Assets/SpatialTrading/Runtime/Components/SecondaryComponent.cs": "4d7743e7934568a64920c5704285a8888c24a4c96b3a6ff49c0162b24a7cdaaf",
+    "quest/Assets/SpatialTrading/Runtime/Components/SyntheticCandleGraphic.cs": "aa4c067f76a8cb31aa43a98a8ef0aface84874fe53ba0b9a92fabaad2b1946ea",
+    "quest/Assets/SpatialTrading/Runtime/FocusShell.cs": "6adc79120e9578346a11251c69d6175b52f7ff8dbf2f4f957cd912de4fbb9322",
+    "quest/Assets/SpatialTrading/Runtime/Interfaces/ShellButton.cs": "7055f9e7f66115709d0abc478afa1be39b34fde99045f22293a50b7e83c14cae",
+    "quest/Assets/SpatialTrading/Runtime/Interfaces/ShellInputSources.cs": "bcc0083b8ac55b876519eb944a852835bf357a1826a19fe42ceaba85b6316c5a",
+    "quest/Assets/SpatialTrading/Runtime/Spatial/SeatedLayout.cs": "cb35f9ded02e43bf44c63ee1fa9d6a8393e67cefe0c5d5b4863510e7af0d988a",
+    "quest/Assets/SpatialTrading/Runtime/Spatial/SurfaceBounds.cs": "0405aa224e2dea77e96b3799697948e358f23a3295c30ff2034f089c5a0143b9",
+    "quest/Assets/SpatialTrading/Runtime/SpatialTrading.Runtime.asmdef": "5a2c7f4ffaf8c640a2c50f329f1f808b8850fe23e42605a420dc94aebba8340a",
+    "quest/Assets/SpatialTrading/Tests/EditMode/ShellActionTests.cs": "35ca3cd89b06d51edd8780d4df4ef0bbd65a85e96dba7ed10b05b8d4c9823f1e",
+    "quest/Assets/SpatialTrading/Tests/EditMode/SpatialTrading.Domain.Tests.asmdef": "8d69a4d3f9bf4f7a51d6852e8f125bc58a6ca433bc50d4be96e79412af457f4c",
+    "quest/Packages/manifest.json": "457de84db0110421b840bbd0156445d57fce752ef587e5c28cf96877f20e5aa3",
+    "quest/ProjectSettings/ProjectVersion.txt": "5b25df62f578207e47336381b31e771ef10e3fe72bb138d4c8e8986c08f9978b",
+    "scripts/test_domain.sh": "62589c4345aca918b55b4ac3316bcec44ac1cacf4102cc036ea96c76607c0f62",
+    "scripts/unity.sh": "df2db7e89735d8e8deab2a65dc39022f7e11bc28b7d756273521e373d374728e",
+    "scripts/verify_m1_sources.py": "7e5c07ca8a1c917f13e5a0dac837f3e72fba2d6ce875a1b9ee14d67ff1ab7bd2",
+    "tests/Domain/Domain.Tests.csproj": "b5d2336a873b19d694cba0e134c3761315c1ce46d3b1d8330c9d34db6e6918fb"
+  }
+}

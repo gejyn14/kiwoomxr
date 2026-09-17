@@ -1,0 +1,12 @@
+{
+  "name": "SpatialTrading.Runtime",
+  "rootNamespace": "SpatialTrading",
+  "references": [
+    "SpatialTrading.Domain",
+    "Oculus.VR",
+    "Oculus.Interaction",
+    "Oculus.Interaction.OVR",
+    "Unity.TextMeshPro",
+    "Unity.ugui"
+  ]
+}

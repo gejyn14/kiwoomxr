@@ -1,0 +1,44 @@
+{
+  "observed_at": "2026-09-17T22:30:18.430679+09:00",
+  "milestone": "1",
+  "status": "IN_PROGRESS",
+  "changes": [
+    "Validation/build refuses unsaved scenes and Play Mode",
+    "Build validator checks standard SDK interaction components and configuration",
+    "Unity runner preserves each invocation in a unique evidence directory"
+  ],
+  "syntax_check": {
+    "checked_files": 14,
+    "scope": "C# 9 syntax only; no Unity semantic compilation",
+    "errors": []
+  },
+  "source_sha256": {
+    "quest/Assets/SpatialTrading/Domain/InstrumentRef.cs": "48cbe4be312d03a299e212db30e5960dd6d079f2454275bba8339963284210be",
+    "quest/Assets/SpatialTrading/Domain/ShellActions.cs": "0f14fa1b97050ad76a0d2ed707775859b08f5dc90ae8142efb1f8e21d561f05b",
+    "quest/Assets/SpatialTrading/Domain/ShellState.cs": "5f62971858fd9f297aa455463af8f3b51a588dcafdd17452d4b138c4eba6c5f9",
+    "quest/Assets/SpatialTrading/Domain/SyntheticCatalog.cs": "79eb735eddd5066fe84971e253eff185205b8d20c98889dc9304cf0367c4e7bf",
+    "quest/Assets/SpatialTrading/Editor/QuestShellProject.cs": "156bee29477c8a3a50d76c294087b88a9ac4c78f60ea5d63fd6cf0203d867b3f",
+    "quest/Assets/SpatialTrading/Runtime/Components/ChartComponent.cs": "33adb0b71a2d060a2905ffd4ed1e782e54c74ec0307fa63464620a9ad7cf0511",
+    "quest/Assets/SpatialTrading/Runtime/Components/SecondaryComponent.cs": "4d7743e7934568a64920c5704285a8888c24a4c96b3a6ff49c0162b24a7cdaaf",
+    "quest/Assets/SpatialTrading/Runtime/Components/SyntheticCandleGraphic.cs": "aa4c067f76a8cb31aa43a98a8ef0aface84874fe53ba0b9a92fabaad2b1946ea",
+    "quest/Assets/SpatialTrading/Runtime/FocusShell.cs": "6adc79120e9578346a11251c69d6175b52f7ff8dbf2f4f957cd912de4fbb9322",
+    "quest/Assets/SpatialTrading/Runtime/Interfaces/ShellButton.cs": "7055f9e7f66115709d0abc478afa1be39b34fde99045f22293a50b7e83c14cae",
+    "quest/Assets/SpatialTrading/Runtime/Interfaces/ShellInputSources.cs": "bcc0083b8ac55b876519eb944a852835bf357a1826a19fe42ceaba85b6316c5a",
+    "quest/Assets/SpatialTrading/Runtime/Spatial/SeatedLayout.cs": "cb35f9ded02e43bf44c63ee1fa9d6a8393e67cefe0c5d5b4863510e7af0d988a",
+    "quest/Assets/SpatialTrading/Runtime/Spatial/SurfaceBounds.cs": "0405aa224e2dea77e96b3799697948e358f23a3295c30ff2034f089c5a0143b9",
+    "quest/Assets/SpatialTrading/Tests/EditMode/ShellActionTests.cs": "35ca3cd89b06d51edd8780d4df4ef0bbd65a85e96dba7ed10b05b8d4c9823f1e",
+    "scripts/unity.sh": "63176778433af49d278319cde441f0bf210ab27c7cd6890e49d612f92a966120"
+  },
+  "unity_hub": "SIGN_IN_SCREEN",
+  "adb_device_count": 0,
+  "unity_compile": "NOT_RUN",
+  "android_build": "NOT_RUN",
+  "headset_acceptance": "NOT_RUN",
+  "unity_import_retry": {
+    "status": "BLOCKED_LICENSE",
+    "exit_code": 198,
+    "evidence_directory": "artifacts/milestone1/unity/import-20260917T133057Z-XEDFpw",
+    "log_sha256": "cf4c67aaf310f5cce3e4b1d13122817d07f87f68b914654889f0053c652772c6",
+    "original_failure_preserved": true
+  }
+}

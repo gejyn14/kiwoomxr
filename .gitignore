@@ -1,0 +1,44 @@
+# Gateway credentials and private local configuration.
+.env
+.env.*
+!.env.example
+secrets/
+*.local.env
+docs/*_appkey.txt
+docs/*_secretkey.txt
+docs/*_token.txt
+docs/*_account.txt
+# Keep the original local API workbook: it contains credential-shaped examples.
+/docs/미국 REST API 문서.xlsx
+# SDK-local AI development settings can contain generated access tokens.
+quest/Assets/Resources/DevAgentSettings.asset
+quest/Assets/Resources/DevAgentSettings.asset.meta
+
+# Local OS metadata.
+.DS_Store
+
+# Unity generated state and local build evidence (source assets and .meta stay tracked).
+quest/Library/
+quest/Temp/
+quest/.utmp/
+quest/Obj/
+quest/Logs/
+quest/UserSettings/
+quest/MemoryCaptures/
+quest/Recordings/
+quest/Builds/
+artifacts/
+*.csproj
+*.sln
+*.slnx
+
+# Standalone tests link the same pure C# sources as Unity.
+!tests/**/*.csproj
+tests/**/bin/
+tests/**/obj/
+tests/**/TestResults/
+
+# Local vendor installers; retain on this machine only.
+/docs/*.pkg
+/docs/*.dmg
+/docs/*.dmg.zip

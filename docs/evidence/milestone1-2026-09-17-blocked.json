@@ -1,0 +1,23 @@
+{
+  "observed_at": "2026-09-17T22:32:17.538715+09:00",
+  "milestone": "1",
+  "status": "BLOCKED_EXTERNAL_SETUP",
+  "consecutive_goal_turns_with_same_blocker": 3,
+  "unity_import": {
+    "exit_code": 198,
+    "reason": "No valid Unity Editor license found. Please activate your license.",
+    "evidence_directory": "artifacts/milestone1/unity/import-20260917T133143Z-WsQD8r",
+    "log_sha256": "3da9f121bd83bd1291a3b9e05d578228370afe96d51c842b98e4b0776401afaf"
+  },
+  "unity_hub": "SIGN_IN_SCREEN",
+  "adb_device_count": 0,
+  "remaining": [
+    "Unity license activation",
+    "Matched Android toolchain setup",
+    "Unity package resolution and semantic compilation",
+    "Scene generation and Unity tests",
+    "APK build and manifest/assets inspection",
+    "Quest 3 physical interaction and comfort acceptance"
+  ],
+  "milestone_complete": false
+}

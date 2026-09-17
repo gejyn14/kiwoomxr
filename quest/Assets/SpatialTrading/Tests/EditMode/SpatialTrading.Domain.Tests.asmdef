@@ -1,0 +1,7 @@
+{
+  "name": "SpatialTrading.Domain.Tests",
+  "references": ["SpatialTrading.Domain"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}

@@ -1,0 +1,5 @@
+{
+  "name": "SpatialTrading.Editor",
+  "references": ["SpatialTrading.Domain", "SpatialTrading.Runtime", "Oculus.VR", "Oculus.VR.Editor", "Oculus.Interaction", "Oculus.Interaction.Editor", "Oculus.Interaction.OVR.Editor", "Unity.TextMeshPro", "Unity.ugui", "Unity.XR.Management", "Unity.XR.Management.Editor", "Unity.XR.OpenXR", "Unity.XR.OpenXR.Editor"],
+  "includePlatforms": ["Editor"]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "SpatialTrading.Domain",
+  "rootNamespace": "SpatialTrading.Domain",
+  "references": [],
+  "noEngineReferences": true
+}

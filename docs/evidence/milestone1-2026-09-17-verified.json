@@ -1,0 +1,216 @@
+{
+  "observed_at": "2026-09-17T23:54:02.999418+09:00",
+  "milestone": "1",
+  "status": "SOFTWARE_VERIFIED_HARDWARE_ACCEPTANCE_PENDING",
+  "milestone_complete": false,
+  "scope": "Synthetic shell only; no financial integration, voice, Gemini or orders",
+  "versions": {
+    "unity": "6000.0.67f1",
+    "unity_revision": "78a1c2bbeb6a",
+    "meta_xr": "205.0.0",
+    "meta_xr_simulator_mac_arm": "205.0",
+    "openxr": "1.18.0"
+  },
+  "architecture_source_check": {
+    "documents": 7,
+    "explicit_source_references": 49,
+    "rest_mappings": 17,
+    "order_book_levels": 10,
+    "source_hash_unchanged": true,
+    "problems": []
+  },
+  "unity_editmode": {
+    "result": "Passed",
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "exit_code": 0,
+    "xml": {
+      "path": "artifacts/milestone1/unity/test-20260917T144713Z-msS7Mk/editmode.xml",
+      "sha256": "6468532ff7fcb0831c853b081f2c37a0ec9437af6555978fd4764e74b25dfe85"
+    },
+    "log": {
+      "path": "artifacts/milestone1/unity/test-20260917T144713Z-msS7Mk/editor.log",
+      "sha256": "418013507cb44469d069d9248a69239743d4365c39a4bd63e97a75160b2711b3"
+    }
+  },
+  "independent_dotnet": {
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "Shared pure domain sources/tests, not Unity runtime",
+    "trx": {
+      "path": "artifacts/milestone1/domain/domain.trx",
+      "sha256": "11b4d68a9cc19da9b9025234488ef1f44f49effdb5a49d5234ee58428b589100"
+    }
+  },
+  "android_build": {
+    "exit_code": 0,
+    "log": {
+      "path": "artifacts/milestone1/unity/build-20260917T144743Z-9Yhu0C/editor.log",
+      "sha256": "efddd140d7e67ee2d83632c763f51742b4e6ecc938921bc1c03c7bab2e547862"
+    },
+    "apk": {
+      "path": "quest/Builds/Android/SpatialTrading-Shell.apk",
+      "result": "PASS",
+      "apk_sha256": "e567faa931ef99e2924d30743e01cd4fc5b807e5fa3faabec1745d54c0a97ffc",
+      "bytes": 97400636,
+      "package": "com.kiwoomxr.spatialshell",
+      "min_sdk": 32,
+      "target_sdk": 36,
+      "abis": [
+        "arm64-v8a"
+      ],
+      "permissions": [
+        "android.permission.INTERNET",
+        "com.oculus.permission.HAND_TRACKING",
+        "com.kiwoomxr.spatialshell.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+      ],
+      "known_local_sdk_token_count": 1,
+      "known_token_scan": "PASS",
+      "scope": "Manifest, filenames, architecture, known SDK token bytes; not device acceptance or a complete secret audit",
+      "errors": []
+    },
+    "inspection": {
+      "path": "artifacts/milestone1/unity/build-20260917T144743Z-9Yhu0C/apk-inspection.json",
+      "sha256": "8d9b2755ec4bd1fc7398ebbc64fe20879c3f0e07decb7b7fcff0848cb2d0e060"
+    },
+    "manifest": {
+      "path": "artifacts/milestone1/unity/build-20260917T144743Z-9Yhu0C/apk-manifest.txt",
+      "sha256": "d74c10498c5bf388cc81c80c13e04ffbda76ac0c4e6573729a3e208643022fd7"
+    },
+    "development_build": true,
+    "device_installed": false
+  },
+  "simulator": {
+    "result": "PASS_BOUNDED_CONTROLLER_SCENARIOS",
+    "financial_data": "SYNTHETIC",
+    "input_method": "SDK Operator controller poses and trigger values through standard Meta interactors; no direct app Action injection",
+    "fresh_editor_process": true,
+    "runtime_exception_entries": 0,
+    "action_sequence": [
+      {
+        "type": "SELECT_INSTRUMENT",
+        "source": "Controller",
+        "revision": 1,
+        "result": "APPLIED"
+      },
+      {
+        "type": "OPEN_ORDERBOOK",
+        "source": "Controller",
+        "revision": 2,
+        "result": "APPLIED"
+      },
+      {
+        "type": "OPEN_POSITION",
+        "source": "Controller",
+        "revision": 3,
+        "result": "APPLIED"
+      },
+      {
+        "type": "COMPARE_INSTRUMENT",
+        "source": "Controller",
+        "revision": 4,
+        "result": "APPLIED"
+      },
+      {
+        "type": "OPEN_ORDERBOOK",
+        "source": "Controller",
+        "revision": 5,
+        "result": "APPLIED"
+      },
+      {
+        "type": "SELECT_INSTRUMENT",
+        "source": "Controller",
+        "revision": 6,
+        "result": "APPLIED"
+      },
+      {
+        "type": "CLOSE_COMPONENT",
+        "source": "Controller",
+        "revision": 7,
+        "result": "APPLIED"
+      }
+    ],
+    "chart_move_delta_m": {
+      "x": 0.12,
+      "y": -0.04,
+      "z": 0.0
+    },
+    "released_chart_scale": {
+      "x": 1.350000023841858,
+      "y": 1.350000023841858,
+      "z": 1.350000023841858
+    },
+    "recenter_restored_position_and_scale": true,
+    "final_instrument": "shell:005930",
+    "final_secondary": "closed",
+    "log": {
+      "path": "artifacts/milestone1/simulator/editor-focus-fix.log",
+      "sha256": "5ef0758ddbfb8a744f84efd2066bef62182f5ad70c4e089384f1bbf56932cbc7"
+    },
+    "captures": [
+      {
+        "path": "artifacts/milestone1/simulator/sk-selection-authoritative-state.json",
+        "sha256": "9c0f416ad0e670fd5d663f43e7ae7b5020c297751add03950068f08cbe4ef44c"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/OpenOrderBook-state.json",
+        "sha256": "b787af3bfe6c88a17295fac4e3c0a0e7da53ea4ba345880a99816681aef1569d"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/OpenPosition-state.json",
+        "sha256": "7e3e6468b13af2d9f016863d461b5ee645732f3d345e72fc4b82a60c5ee611e2"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/CompareOther-state.json",
+        "sha256": "dfaa4f689097949e2411d57373110906456046c8fc6c48187be93b6f5ced241b"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/chart-moved-released-state.json",
+        "sha256": "009919b116cbff20f1f40b5c2a08c21d6e8a9ecde98156f187a2fb82dbcfe90a"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/resize2-released-state.json",
+        "sha256": "498f96cdb6e8874c31d22bc3cdc7923f2cadd6f082879994655fa007d19d499e"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/recenter-state.json",
+        "sha256": "872d7a5dfb986feb72b47668eb84c49c41e3df7089cbcf2cf7cb148ef7d04e90"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/binding-samsung-state.json",
+        "sha256": "d51c39a8b8545e5585d862af6892ab120bea8fd1dc65403834bba5a8d15dff93"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/secondary-closed-state.json",
+        "sha256": "28c409abcf3d432314d4d5c0bc0b7825faad15ff12e24d65c52c88cf31010f48"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/final-state.json",
+        "sha256": "9b51950d0c5922e01dc15a6bc5448f8092658ddb961cefddcdd150f8386f3508"
+      },
+      {
+        "path": "artifacts/milestone1/simulator/samsung-orderbook-focused.png",
+        "sha256": "19dd891e73c9ed928e605b27d8dbd452515fc7e14b02217a626491ac16e72ca6"
+      }
+    ],
+    "shared_screenshot": {
+      "path": "docs/images/milestone1-focus.png",
+      "sha256": "a78e52ea35fdc8381cab4013f6252ef17bc579096c09da1a042ff90eef669ac1"
+    }
+  },
+  "retained_limitations": [
+    "Quest 3 unavailable: all physical acceptance checks NOT_RUN",
+    "Editor recompile/re-enter Play session produced SDK lifecycle exceptions; fresh-process retry passed; hot reload not accepted",
+    "First resize automation used an aliased controller pose; corrected independent pose motion passed",
+    "Direct hand poke/pinch, physical passthrough, on-device performance and comfort not established",
+    "Current SDK restores local Editor credentials after build; known local token was absent from decompressed final APK members",
+    "Raw logs and artifacts remain local and ignored; shared records contain summaries and hashes"
+  ],
+  "remaining": [
+    "Install exact APK on Quest 3",
+    "Execute every hardware acceptance row in docs/MILESTONE_1.md",
+    "Keep Kiwoom integrations blocked until relevant missing specifications are resolved"
+  ]
+}
