@@ -2,6 +2,8 @@
 
 Status: **IN_PROGRESS / LIVE_INTEGRATION_BLOCKED_BY_MISSING_SPEC**, 2026-09-18.
 
+Source policy confirmed 2026-09-20; this does not update the date of the software verification below.
+
 The user requested live data, a substantially improved spatial UI, continued work through M9, and use of Meta's official design guidance. The user confirmed that no physical Quest 3 is available. Continue software/simulator work; do not treat simulator success as device acceptance.
 
 ## Implemented scope
@@ -35,7 +37,7 @@ The final ARM64/IL2CPP Android build and APK inspection passed. Package permissi
 
 The repository workbook remains the only authorized Kiwoom source. Its required bearer header for initial token issuance conflicts with credential bootstrap, and its WS lifecycle and several numeric/time semantics are incomplete. See [K-01–K-10](KIWOOM_API_MAPPING.md#blocking-specification-register).
 
-A source-scope question is pending: may official Kiwoom documentation be consulted and the relevant evidence added to this repository? Until answered, do not guess auth headers, try undocumented requests, normalize ambiguous signed prices with `abs()`, or label a local response as live market data. An available environment key is not a substitute for a verified wire specification.
+The user confirmed on 2026-09-20 that only the current repository specification may be used. External Kiwoom documentation is not an authorized supplement. K1's SHA-256 still matches the recorded source, and no additional specification was found. The source-scope question is resolved; the integration remains `BLOCKED_BY_MISSING_SPEC`. Do not guess auth headers, try undocumented requests, normalize ambiguous signed prices with `abs()`, or label a local response as live market data. An available environment key is not a substitute for a verified wire specification.
 
 The [roadmap](ROADMAP.md) retains M3–M9 exit gates, including deterministic order safeguards and deliberate physical confirmation. The present gateway has no order submission capability.
 

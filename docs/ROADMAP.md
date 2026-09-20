@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-Updated 2026-09-18. Continue incrementally through the user's M0–M9 roadmap. Finish supported work and retain explicit external/specification gates; never turn missing evidence into a completed milestone.
+Updated 2026-09-20 for the source-policy decision. Software/build evidence remains dated 2026-09-18. Continue incrementally through the user's M0–M9 roadmap. Finish supported work and retain explicit external/specification gates; never turn missing evidence into a completed milestone.
 
 | Milestone | Current state | Exit evidence |
 |---|---|---|
@@ -19,4 +19,4 @@ The user currently has no Quest 3. Continue simulator-based development. Do not 
 
 The user requested Meta's design guide and the documents in this repository as design inputs. Implementation decisions and review criteria are tracked in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md).
 
-A pending source-scope question asks whether official Kiwoom documentation may supplement the repository workbook. Until answered, the original repository-only source boundary applies. The supplied workbook's K-01–K-10 gates remain open. No live brokerage request or order is authorized by a simulated successful interaction.
+Source policy confirmed on 2026-09-20: use only the Kiwoom specification currently supplied in this repository. Do not consult external Kiwoom documentation or import it to fill gaps. The local workbook's SHA-256 was rechecked and matches K1 in [API mapping](KIWOOM_API_MAPPING.md); no additional specification was found. The source-scope question is resolved, while K-01–K-10 remain `BLOCKED_BY_MISSING_SPEC`. Affected broker integrations stay stopped; UI, simulator and application-contract work can proceed within the existing milestone scope. No live brokerage request or order is authorized by a simulated successful interaction.

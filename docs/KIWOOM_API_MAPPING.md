@@ -6,6 +6,8 @@ Status: Milestone 0 source review, 2026-09-17. **No broker API has been called o
 
 `K1` is the repository-supplied `docs/미국 REST API 문서.xlsx`, inspected read-only. It contains 339 sheets, including domestic stock REST and realtime sheets despite its filename. The workbook labels itself `키움 REST API`. Its release/version/current operational validity is not established by the supplied file. It is the sole authorized Kiwoom specification for this project; no external Kiwoom website, prior knowledge, third-party client or model-generated example was used to fill gaps.
 
+**Source decision, 2026-09-20:** the user reaffirmed use of the current repository specification only. External Kiwoom documentation must not be consulted or imported to resolve gaps. K1's local SHA-256 was rechecked on this date and is unchanged; no additional specification was found. K-01–K-10 remain blocked. This is a source-policy/hash verification, not a new broker integration test.
+
 The original workbook remains local and is excluded from Git because its examples contain credential-shaped key/token values. A fresh clone must receive the authorized source file separately and verify its hash before extending any integration. This mapping preserves sheet/cell provenance; it does not substitute for missing specification semantics.
 
 SHA-256 of K1:
@@ -151,6 +153,6 @@ Every row is **BLOCKED_BY_MISSING_SPEC** until the stated repository evidence is
 
 ## Unblocking workflow
 
-Add the missing official material to this repository without credentials or private account examples. Record its path, version/date and SHA-256. Update the relevant mapping with exact cell/page/section citations and separate remaining ambiguities. Implement only the now-supported smallest capability slice, with source-shaped contract fixtures and deterministic negative tests. Record live/simulation/device evidence separately. A successful guessed request is not a substitute for a specification, and closing a market-data gap does not automatically enable orders.
+The current authorized source set is K1 only. Do not fetch external documentation to populate this register. If the user later supplies additional authoritative specification in the repository or explicitly changes the source policy, review that material without publishing credentials or private account examples. Record its path, version/date and SHA-256. Update the relevant mapping with exact cell/page/section citations and separate remaining ambiguities. Implement only the now-supported smallest capability slice, with source-shaped contract fixtures and deterministic negative tests. Record live/simulation/device evidence separately. A successful guessed request is not a substitute for a specification, and closing a market-data gap does not automatically enable orders.
 
 Initial excluded integrations are news, credit/margin, derivatives, overseas products, advanced routing, complex orders and broker amendment/cancellation. `CANCEL_ORDER_DRAFT` is purely an application action and has no Kiwoom TR mapping. The presence of overseas APIs in K1 does not expand scope.
