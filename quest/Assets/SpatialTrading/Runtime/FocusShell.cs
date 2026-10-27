@@ -89,7 +89,8 @@ namespace SpatialTrading
             try { _chart.RenderData(state.SelectedInstrument, _market.Quote(state.SelectedInstrument.Code), _market.Candles(state.SelectedInstrument.Code),
                 _market.MarketLabel(state.SelectedInstrument.Code)); } catch (Exception error) { Debug.LogException(error, _chart); }
             try { _secondary.RenderData(state, _market.Book(state.SelectedInstrument.Code), _market.Quote(state.SelectedInstrument.Code),
-                state.ComparisonInstrument == null ? null : _market.Quote(state.ComparisonInstrument.Code)); } catch (Exception error) { Debug.LogException(error, _secondary); }
+                state.ComparisonInstrument == null ? null : _market.Quote(state.ComparisonInstrument.Code),
+                _market.MarketLabel(state.SelectedInstrument.Code)); } catch (Exception error) { Debug.LogException(error, _secondary); }
         }
 
         private void RecordAction(ShellAction action, ActionResult result)

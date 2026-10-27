@@ -14,7 +14,7 @@ namespace SpatialTrading.Tests
             ["instrument_code"] = "005930", ["state"] = value == null ? "UNAVAILABLE" : "DELAYED",
             ["origin"] = "KIWOOM", ["value"] = value,
             ["received_at"] = value == null ? null : "2026-09-17T15:00:00+00:00", ["source_at"] = null,
-            ["reason"] = value == null ? "BLOCKED_BY_MISSING_SPEC:K-01" : null,
+            ["reason"] = value == null ? "MARKET_CLOSED" : null,
             ["correlation_id"] = Correlation.ToString()
         };
         private static JObject QuoteValue() => JObject.Parse("{\"last_price\":\"123456789.12345678\",\"change\":\"-12.5\",\"change_percent\":null,\"volume\":\"123456789012345678\"}");
@@ -26,7 +26,7 @@ namespace SpatialTrading.Tests
             var quote = GatewayContract.Quote(json, "005930", Correlation);
             Assert.That(quote.State, Is.EqualTo(DataState.Unavailable));
             Assert.That(quote.Value, Is.Null);
-            Assert.That(quote.Reason, Is.EqualTo("BLOCKED_BY_MISSING_SPEC:K-01"));
+            Assert.That(quote.Reason, Is.EqualTo("MARKET_CLOSED"));
             Assert.That(GatewayContract.Candles(json, "005930", Correlation).Value, Is.Null);
             Assert.That(GatewayContract.Book(json, "005930", Correlation).Value, Is.Null);
         }

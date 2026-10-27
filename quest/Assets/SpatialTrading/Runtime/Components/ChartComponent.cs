@@ -32,13 +32,13 @@ namespace SpatialTrading.Components
             _change.text = percent.HasValue ? percent.Value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%  ·  전일 대비" : "전일 대비 —";
             _change.color = percent > 0 ? new Color(1,.43f,.52f) : percent < 0 ? new Color(.30f,.63f,1) : new Color(.55f,.63f,.74f);
             _source.text = quote.Origin == DataOrigin.Synthetic ? "PREVIEW  /  합성 시세" : "KIWOOM" + (market == null ? "" : " · " + market) + "  /  " + (quote.State == DataState.Delayed ? "SNAPSHOT" : quote.State.ToString().ToUpperInvariant());
-            _freshness.text = quote.Reason != null && quote.Reason.StartsWith("BLOCKED_BY_MISSING_SPEC") ? "시세 연결 준비 중 · API 명세 확인 필요" : quote.Origin == DataOrigin.Synthetic ? "디자인 미리보기 · 실제 시세 아님" :
-                StateName(quote.State) + (quote.ReceivedAt.HasValue ? "  ·  수신 " + quote.ReceivedAt.Value.ToOffset(TimeSpan.FromHours(9)).ToString("HH:mm:ss") : "  ·  수신 데이터 없음");
+            _freshness.text = quote.Origin == DataOrigin.Synthetic ? "디자인 미리보기 · 실제 시세 아님" :
+                StatusText.State(quote.State, quote.Reason) + (quote.ReceivedAt.HasValue ? "  ·  수신 " + quote.ReceivedAt.Value.ToOffset(TimeSpan.FromHours(9)).ToString("HH:mm:ss") : "  ·  수신 데이터 없음");
             _candles.SetSeries(candles.Value);
             var bars = candles.Value?.Candles;
-            _period.text = bars == null || bars.Count == 0 ? StateName(candles.State) :
+            _period.text = bars == null || bars.Count == 0 ? StatusText.State(candles.State, candles.Reason) :
                 candles.Origin == DataOrigin.Synthetic ? "40 BARS  ·  합성 차트" :
-                StateName(candles.State) + "  ·  " + candles.Value.Interval + "  ·  최근 " + Math.Min(bars.Count, CandleChartGraphic.MaxVisible) + "개";
+                StatusText.State(candles.State, candles.Reason) + "  ·  " + candles.Value.Interval + "  ·  최근 " + Math.Min(bars.Count, CandleChartGraphic.MaxVisible) + "개";
             decimal? high = null, low = null;
             if (bars != null) for (var i = Math.Max(0, bars.Count - CandleChartGraphic.MaxVisible); i < bars.Count; i++)
             { var bar = bars[i]; high = high.HasValue ? Math.Max(high.Value, bar.High) : bar.High; low = low.HasValue ? Math.Min(low.Value, bar.Low) : bar.Low; }
@@ -46,18 +46,5 @@ namespace SpatialTrading.Components
         }
 
         public static string Format(decimal? value) => value.HasValue ? value.Value.ToString("#,0.########", CultureInfo.InvariantCulture) : "—";
-        public static string StateName(DataState state)
-        {
-            switch (state)
-            {
-                case DataState.Loading: return "불러오는 중";
-                case DataState.Live: return "실시간";
-                case DataState.Delayed: return "스냅샷 · 실시간 보장 없음";
-                case DataState.Stale: return "오래된 데이터";
-                case DataState.Disconnected: return "연결 끊김";
-                case DataState.Error: return "데이터 오류";
-                default: return "데이터 이용 불가";
-            }
-        }
     }
 }

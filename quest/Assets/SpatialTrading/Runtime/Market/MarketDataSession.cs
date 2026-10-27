@@ -16,7 +16,6 @@ namespace SpatialTrading.Market
         public const string EditorUrlPref = "SpatialTrading.GatewayStreamUrl";
         public const string EditorTokenPref = "SpatialTrading.GatewayPairingToken";
         public const string DeviceSettingsFile = "gateway.json";
-        public const string HeartbeatLost = "GATEWAY_HEARTBEAT_LOST";
         private const string ConfigurationRequired = "GATEWAY_CONFIGURATION_REQUIRED";
         private const float HeartbeatLimitSeconds = 15;
 
@@ -36,7 +35,11 @@ namespace SpatialTrading.Market
         private float? _heartbeatAt;
         private bool _dirty;
         public bool IsPreview => _preview;
-        public void Configure(bool preview) { _preview = preview; _selected = null; _compared = null; StopStream(); }
+        public void Configure(bool preview)
+        {
+            if (preview != _preview) ClearCache(); // synthetic values never survive into gateway mode, nor live ones into preview
+            _preview = preview; _selected = null; _compared = null; StopStream();
+        }
 
         public Observation<QuoteSnapshot> Quote(string code) => View(_quotes, code);
         public Observation<CandleSeries> Candles(string code) => View(_candles, code);
@@ -52,18 +55,8 @@ namespace SpatialTrading.Market
         {
             cache.TryGetValue(code, out var raw);
             if (_preview || !_codes.Contains(code)) return raw ?? Empty<T>(DataState.Loading);
-            if (_linkReason != null) return Overlay(raw, DataState.Disconnected, _linkReason);
-            if (raw == null) return Empty<T>(DataState.Loading);
-            if (_brokerReason != null && (raw.State == DataState.Live || raw.State == DataState.Delayed || raw.State == DataState.Stale))
-                return Overlay(raw, DataState.Disconnected, _brokerReason);
-            // Aging follows gateway heartbeats only; tick/source time never marks a value stale.
-            if (_heartbeatLost && (raw.State == DataState.Live || raw.State == DataState.Delayed))
-                return Overlay(raw, DataState.Stale, HeartbeatLost);
-            return raw;
+            return StreamOverlay.Apply(raw, _linkReason, _brokerReason, _heartbeatLost);
         }
-
-        private Observation<T> Overlay<T>(Observation<T> raw, DataState state, string reason) where T : class =>
-            raw == null ? Empty<T>(state, reason) : new Observation<T>(raw.Value, state, raw.Origin, raw.ReceivedAt, raw.SourceAt, reason);
 
         public void Select(ShellState state, Guid correlationId)
         {

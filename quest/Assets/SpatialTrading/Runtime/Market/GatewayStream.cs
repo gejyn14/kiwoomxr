@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.WebSockets;
@@ -22,6 +21,8 @@ namespace SpatialTrading.Market
         public const string Unauthorized = "GATEWAY_UNAUTHORIZED";
         public const string MessageTooLarge = "GATEWAY_MESSAGE_TOO_LARGE";
         private const int CloseUnauthorized = 4401;
+        // Backstop while frames are not drained (e.g. paused); every message is full state per capability.
+        private const int MaxInbox = 512;
         private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(8);
         // Heartbeats arrive every 5 s; a silent socket this long is treated as half-open.
         private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(20);
@@ -31,7 +32,7 @@ namespace SpatialTrading.Market
         public event Action<StreamHeartbeat> Heartbeat;
         public event Action<string> Disconnected;
 
-        private readonly ConcurrentQueue<Inbound> _inbox = new ConcurrentQueue<Inbound>();
+        private readonly BoundedInbox<Inbound> _inbox = new BoundedInbox<Inbound>(MaxInbox);
         private CancellationTokenSource _cancel;
         private int _generation;
         private Guid _subscription;
@@ -85,6 +86,13 @@ namespace SpatialTrading.Market
         private void OnEnable() => Begin();
         private void OnDisable() => Stop();
         private void OnDestroy() => Close();
+
+        // No frames are drained while paused; drop the socket and reconnect on resume (the gateway re-sends full state).
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused) { Stop(); _inbox.Clear(); }
+            else if (isActiveAndEnabled) Begin();
+        }
 
         private void Update()
         {
