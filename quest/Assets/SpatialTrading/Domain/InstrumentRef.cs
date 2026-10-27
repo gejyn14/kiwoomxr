@@ -2,14 +2,17 @@ using System;
 
 namespace SpatialTrading.Domain
 {
+    public enum InstrumentKind { Stock, Index }
+
     /// <summary>Selection identity only. No price, holdings or broker credentials.</summary>
     public sealed class InstrumentRef : IEquatable<InstrumentRef>
     {
         public string Id { get; }
         public string Code { get; }
         public string DisplayName { get; }
+        public InstrumentKind Kind { get; }
 
-        public InstrumentRef(string id, string code, string displayName)
+        public InstrumentRef(string id, string code, string displayName, InstrumentKind kind = InstrumentKind.Stock)
         {
             if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(code) ||
                 string.IsNullOrWhiteSpace(displayName))
@@ -17,6 +20,7 @@ namespace SpatialTrading.Domain
             Id = id;
             Code = code;
             DisplayName = displayName;
+            Kind = kind;
         }
 
         public bool Equals(InstrumentRef other) => other != null && Id == other.Id;
