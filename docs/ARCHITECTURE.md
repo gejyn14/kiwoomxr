@@ -104,6 +104,29 @@ Subscription identity includes principal, account alias where applicable, instru
 
 On reconnect, authenticate again, fetch current context/drafts/orders, invalidate old challenges, recreate subscriptions, then refresh snapshots. Never replay queued confirmation or submission requests. Historical charts and saved layout may be restored with explicit source/age labels; restored values are never live merely because the UI loaded them.
 
+## Trader spread gateway (current)
+
+The `TraderSpread` scene is fed by these gateway pieces. All are read-only; none can place an order.
+
+**Stream capabilities** on `WS /v1/stream` (each message is full state for one capability and subject, coalesced per code):
+
+| Capability | Subject | Notes |
+| --- | --- | --- |
+| `quote`, `candles` (1-minute, legacy), `orderbook` | 6-digit stock code | `orderbook` is stock-only; the Unity client decodes the legacy `candles` message but no panel uses it |
+| `candles_1d`, `candles_4h` | 6-digit stock code or 3-digit index code | `001` (KOSPI) is accepted on `quote` and the two candle capabilities only, never `orderbook`; KRX and NXT series stay separate and indices are KRX-only |
+| `balance` | `ACCOUNT` | one per connection, not tied to the subscribed codes; masked account, total evaluation, profit, orderable cash, holdings |
+| `news` | `NEWS` | origin `NEWS` (not `KIWOOM`); RSS headlines and DART filings |
+
+Subject observations are sent at most once per second, candles at most twice per second, quote and book on a 0.1 s coalescing window. A subscribe frame carries 1-10 codes and the pairing token; `ACCOUNT` and `NEWS` are added by the gateway when the services exist.
+
+**AccountService** (`account.py`): `ka00001` gives the account number once; it is kept in memory and exposed only in masked form. `kt00018` (balance and holdings) is polled every 60 s. A realtime `04` event only signals "something changed": bursts coalesce into one balance query about 1 s later, at least 2 s after the previous one, and the `04` payload (including its account field) is never parsed. `kt00010` supplies orderable cash for 005930 at the last price; if no price is known or the call fails the value is null, never zero. Failures report only the error code and type.
+
+**NewsService** (`news.py`): RSS feeds every 5 minutes (defaults 한국경제 and 연합뉴스, or `GATEWAY_NEWS_FEEDS`) and DART disclosures of the last 7 days every 10 minutes for the built-in `CORP_CODES` companies, only when `DART_API_KEY` is set. Items are cleaned, merged, de-duplicated, capped at 40 and tagged with the stock or index codes their title mentions. httpx logging is silenced because the DART URL carries the key.
+
+**ChartStore** (`market/charts.py`): holds up to 120 daily and 4-hour bars per (code, market). 1D bars are seeded from `ka10081` (stocks) and `ka20006` (indices); 4H bars are aggregated from 60-minute bars (`ka10080`, `ka20005`). Realtime trades and `0J` index ticks update the last bar; a tick that would make an invalid series is dropped whole. Seeding repeats every 30 minutes.
+
+**Shared REST pacer** (`KiwoomRest._wait_turn`): every REST caller (chart seeding, account queries) goes through one lock and waits at least 0.25 s since the previous call, so seeding and account polling cannot burst the broker together. Field-level detail is in [KIWOOM_API_MAPPING.md](KIWOOM_API_MAPPING.md).
+
 ## Gemini as an interface
 
 The gateway holds the Gemini key and manages all provider connections, including Live sessions. Quest sends user-initiated audio and explicitly selected application visual context. The initial tool set is exactly `select_instrument`, `open_chart`, `open_orderbook`, `open_position`, `compare_instrument`, `create_order_draft`. No generic HTTP, brokerage, shell, account-switch or execution tool is exposed.

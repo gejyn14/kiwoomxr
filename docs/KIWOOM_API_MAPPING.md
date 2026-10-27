@@ -121,6 +121,31 @@ All four rows below share the documented WSS origin/path above. Registration fie
 
 No `LOGIN`, `PING`, login, reconnect or per-second quota definition was found in the inspected workbook cell text. This is an inventory finding, not proof that the operational API has no such requirements. Neither a WebSocket login message nor a heartbeat reply is specified here.
 
+## Trader spread: fields actually used (2026-10-28)
+
+The gateway parses only the fields below for the trader-spread panels (`gateway/src/spatial_gateway/kiwoom/rest.py`, `realtime.py`, `values.py`). These TR codes live in the gateway and in this document only: the Unity sources must not contain them, and `scripts/verify_m1_sources.py` enforces that. Responses are the kiwoom-cli documentation and fixtures from a live account with no holdings; the row fields of `kt00018` follow the documentation because the account had no rows. No order TR is called.
+
+| TR | Path | Request fields sent | Response fields read |
+| --- | --- | --- | --- |
+| `ka10081` daily stock candles | `/api/dostk/chart` | `stk_cd`, `base_dt` (today), `upd_stkpc_tp`=1 | list `stk_dt_pole_chart_qry`: `dt` (YYYYMMDD, bar start 09:00 KST), `open_pric`, `high_pric`, `low_pric`, `cur_prc`, `trde_qty` |
+| `ka10080` minute stock candles | `/api/dostk/chart` | `stk_cd`, `tic_scope` (`1` for the legacy 1-minute series, `60` for 4H), `upd_stkpc_tp`=0 | list `stk_min_pole_chart_qry`: `cntr_tm` (YYYYMMDDHHMMSS), `open_pric`, `high_pric`, `low_pric`, `cur_prc`, `trde_qty` |
+| `ka20006` daily index candles | `/api/dostk/chart` | `inds_cd`, `base_dt` | list `inds_dt_pole_qry`: `dt`, `open_pric`, `high_pric`, `low_pric`, `cur_prc`, `trde_qty`; levels use the index scale below |
+| `ka20005` minute index candles | `/api/dostk/chart` | `inds_cd`, `tic_scope`=60 | list `inds_min_pole_qry`: `cntr_tm`, `open_pric`, `high_pric`, `low_pric`, `cur_prc`, `trde_qty`; index scale applies |
+| `ka00001` account number | `/api/dostk/acnt` | none | `acctNo`, held in memory and exposed only masked |
+| `kt00018` balance | `/api/dostk/acnt` | `qry_tp`=1, `dmst_stex_tp`=KRX | `tot_evlt_amt`, `tot_evlt_pl`, `tot_prft_rt`; list `acnt_evlt_remn_indv_tot`: `stk_cd` (leading `A` stripped), `stk_nm`, `rmnd_qty`, `pur_pric`, `cur_prc`, `evltv_prft`, `prft_rt` |
+| `kt00010` orderable amount | `/api/dostk/acnt` | `stk_cd`=005930, `trde_tp`=2 (buy), `uv` (last price) | `ord_alowa` (zero-padded integer string); a failed or priceless query gives null, never 0 |
+
+The 4H series is not a Kiwoom interval: 60-minute bars from `ka10080`/`ka20005` are aggregated into 4-hour buckets by the gateway. A bar is dropped if any OHLC value or volume is missing or if open/close lie outside low-high.
+
+Realtime (WebSocket `REG`):
+
+| Type | Registered item | Fields read |
+| --- | --- | --- |
+| `0J` index | each `GATEWAY_INDEX_CODES` code | `20` time HHmmss, `10` level, `11` change, `12` change percent; level and change use the index scale below |
+| `04` balance | empty item (token account) | `908` time only. The `9201` account field and every other payload field are never parsed: the event only tells the AccountService to re-query `kt00018` |
+
+**Index scale.** Kiwoom returns index levels and changes as 100x integers: `"563834"` is 5638.34, `"+563834"` the same with a direction sign. `values.index_value` divides by 100 only when the string has no decimal point; a string with a decimal point is taken as already scaled. REST and realtime share this function so they agree. The percent change (`12`) is not rescaled.
+
 ## Order state evidence
 
 | Source observation | Permitted application interpretation now | What remains blocked |

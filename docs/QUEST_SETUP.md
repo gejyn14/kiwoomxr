@@ -55,11 +55,11 @@ export UNITY_EDITOR="$HOME/Applications/UnityEditors/6000.0.67f1/Unity.app/Conte
 
 Run each command only after the previous one succeeds. Configuration uses the new Input System; restart when Unity requests it. Separate processes above also allow settings to reload before scene generation/build. Resolve any real package/compiler errors before proceeding.
 
-The corresponding menu is **Spatial Trading** inside Unity. Scene generation uses public `OVRQuickActionsAPI` and `QuickActionsAPI` from the pinned SDK to create the standard comprehensive rig and its poke, ray and grab connections. It refuses to overwrite an existing `FocusShell.unity`; open/edit that scene normally. For intentional regeneration, first preserve the existing scene under a new path, then rerun generation.
+The corresponding menu is **Spatial Trading** inside Unity. Scene generation uses public `OVRQuickActionsAPI` and `QuickActionsAPI` from the pinned SDK to create the standard comprehensive rig and its poke, ray and grab connections. It refuses to overwrite an existing `TraderSpread.unity`; open/edit that scene normally. For intentional regeneration, first preserve the existing scene under a new path, then rerun generation.
 
 Save open scenes and leave Play Mode before validation or building. The validator refuses unsaved changes instead of discarding them or building older on-disk scene data. If SDK setup changes a scene when loading it, review and save that change before running validation again.
 
-Generated scene: `quest/Assets/SpatialTrading/Scenes/FocusShell.unity`.
+Generated scene: `quest/Assets/SpatialTrading/Scenes/TraderSpread.unity` (the retired FocusShell scene is deleted on regeneration).
 Generated XR settings and Korean font assets: `quest/Assets/Generated/`.
 
 After the first successful import/generation, retain Unity-created `.meta` files, scene, settings, TMP resources, generated font assets, and the package lock together. Do not copy `Library`, `Temp`, `Logs`, private settings, or build outputs into source control. These generated assets are now present. The scene generator waits for the asynchronous TMP Essential Resources import before creating the Korean font and scene.
@@ -137,7 +137,7 @@ The file must contain exactly `url` and `token`; anything else is rejected. Use 
 
 These steps need a working Unity license and a valid Kiwoom key (Editor check) or the headset (device check). They have not been run yet.
 
-1. **Editor live check.** Start the gateway with a valid key. Open `FocusShell.unity`, set the stream address with menu 9, choose menu 7 and enter Play Mode (or use the Meta XR Simulator, menu 5). On 삼성전자, confirm LIVE, the `KRX`/`NXT` label and a moving order book. Save a simulator capture as `docs/images/live-market-<date>.png`. Stop the gateway: DISCONNECTED must appear within 8 s and the last values must stay visible. Restart it: the shell must recover without input.
+1. **Editor live check.** Start the gateway with a valid key. Open `TraderSpread.unity`, set the stream address with menu 9, choose menu 7 and enter Play Mode (or use the Meta XR Simulator, menu 5). On 삼성전자, confirm LIVE, the `KRX`/`NXT` label and a moving order book. Save a simulator capture as `docs/images/live-market-<date>.png`. Stop the gateway: DISCONNECTED must appear within 8 s and the last values must stay visible. Restart it: the shell must recover without input.
 2. **Device check.** Put the Quest and the Mac on the same hotspot/LAN. Add the Mac's IP to `GATEWAY_ALLOWED_HOSTS`, sideload the APK, push `gateway.json` as above and confirm LIVE on Quest. Record the result and relevant `adb logcat -s Unity` lines in `docs/MILESTONE_2.md`, with the token and device IDs removed.
 
 ### 발표 체크리스트 (demo day)

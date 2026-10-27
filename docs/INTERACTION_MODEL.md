@@ -25,6 +25,35 @@ Use Meta Interaction SDK primitives; do not add bespoke hand gestures. Hover, ga
 
 Quest 3 eye tracking is not an input capability. “Selected visual context” means explicit hand/controller component selection, not inferred eye fixation. Hand-tracking loss shows a clear fallback cue and exposes controller operation. Do not combine UI activation hit regions with grab/resize handles.
 
+## Trader spread workspace (current scene)
+
+`TraderSpread` replaces the Focus picker. Eight flat panels (three stock charts, KOSPI chart, order book, news, balance, order) sit on a grid in two planes: an eye plane about 1.10 m ahead and a lower hand plane about 0.60 m ahead. Panels never pitch or roll; only yaw follows the user. Gestures change presentation only and never touch order state, except that dismissing the order panel cancels a prepared ticket.
+
+| Intent | Hand / controller | Editor backup |
+| --- | --- | --- |
+| Move | Grab the top bar or body; on release the panel snaps to the grid in 0.12 s | Mouse drag |
+| Resize | Grab the corner handle (bottom-right, cyan; amber on the order panel); size changes in whole grid cells and snaps on release. A chart's detail follows its size (line, candles, candles with axes) | Mouse drag on the handle |
+| Dismiss | Flick the panel (about 1.2 m/s over 0.15 m); it flies off and fades with a short whoosh | Fast mouse drag |
+| Restore | Palm up for 0.4 s shows the tray; pull an icon out 0.1 m to restore that panel. The tray hides after 0.6 s without the palm | `T`, or controller Y button, pins the tray ahead of the head |
+| Reset | "기본 배치로" at the end of the tray restores the default layout | `R` |
+| Select chart | Poke or ray on a chart; the book and order panels follow the selection | `1`-`4` select the charts; click |
+
+Editor keys: `T` tray, `R` reset layout, `1`-`4` select chart. Without an XR device the workspace follows the camera until it has held still for 10 frames or a drag starts, then pins once.
+
+The mouse backup cannot press canvas buttons (4H/1D, the order type buttons, 매수 준비 / 확인 / 취소, and the tray's 기본 배치로 button). In an editor without the simulator those need the simulator's controller ray or a headset; `R` and the tray's reset collider still reset the layout.
+
+### Manual headset checks (not provable from the editor)
+
+- Grab a panel's top bar or body, move it and release: it snaps in about 0.12 s and stays flat.
+- Flick-throw a panel: it flies off, fades and whooshes. Throw the order panel during a preview: the preview is cancelled.
+- Drag the corner handle: the size changes in whole cells and snaps on release.
+- Palm up for 0.4 s shows the tray; pulling an icon out 0.1 m restores its panel; looking away for 0.6 s hides the tray.
+- Controller Y toggles the tray; 기본 배치로 resets the layout.
+- Poke and ray work on 4H/1D, the order type buttons, 매수 준비 / 확인 / 취소, and chart tap-to-select.
+- Recenter at a real seated or standing height.
+- During market hours: LIVE labels and book depth.
+- Editor without the simulator: canvas buttons need the simulator's controller ray or a headset (the mouse fallback cannot press them).
+
 ## Focus Mode
 
 Show one selected instrument, its quote, data age and the main chart. Start without book, position or compare. A reachable action strip opens secondary components on demand. Component additions are paced and spatially consistent; opening Position prompts account selection if none exists, without inventing balance data. Selection changes update `FollowSelectedInstrument` bindings; each component transitions through its own loading/live states.

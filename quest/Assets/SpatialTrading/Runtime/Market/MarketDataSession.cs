@@ -26,7 +26,6 @@ namespace SpatialTrading.Market
         [SerializeField] private bool _preview;
         public event Action Changed;
         private readonly Dictionary<string, Observation<QuoteSnapshot>> _quotes = new Dictionary<string, Observation<QuoteSnapshot>>();
-        private readonly Dictionary<string, Observation<CandleSeries>> _candles = new Dictionary<string, Observation<CandleSeries>>();
         private readonly Dictionary<string, Observation<CandleSeries>> _daily = new Dictionary<string, Observation<CandleSeries>>();
         private readonly Dictionary<string, Observation<CandleSeries>> _fourHour = new Dictionary<string, Observation<CandleSeries>>();
         private readonly Dictionary<string, Observation<OrderBookSnapshot>> _books = new Dictionary<string, Observation<OrderBookSnapshot>>();
@@ -50,8 +49,6 @@ namespace SpatialTrading.Market
         }
 
         public Observation<QuoteSnapshot> Quote(string code) => View(_quotes, code);
-        /// <summary>Legacy one-minute candles, kept for the old shell.</summary>
-        public Observation<CandleSeries> Candles(string code) => View(_candles, code);
         public Observation<CandleSeries> Daily(string code) => View(_daily, code);
         public Observation<CandleSeries> FourHour(string code) => View(_fourHour, code);
         public Observation<OrderBookSnapshot> Book(string code) => View(_books, code);
@@ -93,7 +90,6 @@ namespace SpatialTrading.Market
                     var code = instrument.Code;
                     _quotes[code] = PreviewMarketData.Quote(instrument);
                     var candles = PreviewMarketData.Candles(instrument);
-                    _candles[code] = candles;
                     _daily[code] = Relabel(candles, "1D"); _fourHour[code] = Relabel(candles, "4H");
                     if (instrument.Kind != InstrumentKind.Index) _books[code] = PreviewMarketData.Book(instrument);
                 }
@@ -109,7 +105,6 @@ namespace SpatialTrading.Market
                 {
                     var code = instrument.Code;
                     _quotes[code] = Empty<QuoteSnapshot>(DataState.Unavailable, ConfigurationRequired);
-                    _candles[code] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
                     _daily[code] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
                     _fourHour[code] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
                     if (instrument.Kind != InstrumentKind.Index) _books[code] = Empty<OrderBookSnapshot>(DataState.Unavailable, ConfigurationRequired);
@@ -184,7 +179,7 @@ namespace SpatialTrading.Market
 
         private void ClearCache()
         {
-            _quotes.Clear(); _candles.Clear(); _daily.Clear(); _fourHour.Clear(); _books.Clear();
+            _quotes.Clear(); _daily.Clear(); _fourHour.Clear(); _books.Clear();
             _markets.Clear(); _intervalMarkets.Clear(); _balance = null; _news = null;
         }
 
@@ -200,7 +195,7 @@ namespace SpatialTrading.Market
                     switch (update.Capability)
                     {
                         case StreamCapability.Quote: _quotes[update.Code] = update.Quote; _markets[update.Code] = update.Market; break;
-                        case StreamCapability.Candles: _candles[update.Code] = update.Candles; _markets[update.Code] = update.Market; break;
+                        case StreamCapability.Candles: break; // legacy 1-minute series: still sent by the gateway, no panel shows it
                         case StreamCapability.OrderBook: _books[update.Code] = update.Book; _markets[update.Code] = update.Market; break;
                         case StreamCapability.CandlesDaily: _daily[update.Code] = update.Candles; _intervalMarkets[update.Code + "|1D"] = update.Market; break;
                         case StreamCapability.CandlesFourHour: _fourHour[update.Code] = update.Candles; _intervalMarkets[update.Code + "|4H"] = update.Market; break;
