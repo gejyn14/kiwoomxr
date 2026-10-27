@@ -20,12 +20,12 @@ namespace SpatialTrading.Domain
         }
     }
 
-    /// <summary>Display names: 지정가 시장가 최유리 최우선 조건부. Kiwoom kt10000 trde_tp: 0 3 6 7 5.</summary>
+    /// <summary>Display names: 지정가 시장가 최유리 최우선 조건부. Kiwoom order trde_tp: 0 3 6 7 5.</summary>
     public enum OrderType { Limit, Market, BestLimit, PriorityLimit, Conditional }
 
     /// <summary>
     /// Which order types a session allows. 근거: kiwoom-cli order.py ORDER_TYPES(limit 0, market 3,
-    /// conditional 5, best 6, first 7) and docs/KIWOOM_API_MAPPING.md (kt10000 trde_tp 0/3).
+    /// conditional 5, best 6, first 7) and docs/KIWOOM_API_MAPPING.md (order trde_tp 0/3).
     /// NXT 제한은 문서에 명시 없음 → 보수적으로 지정가만.
     /// </summary>
     public static class OrderTypeTable
