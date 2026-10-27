@@ -386,6 +386,22 @@ async def test_reg_ack_is_any_non_login_frame_with_a_return_code(trnm):
     assert len(events) == 1
 
 
+async def test_system_frame_with_return_code_is_not_taken_as_reg_ack():
+    script = [OK_LOGIN, {"trnm": "SYSTEM", "code": "R1", "return_code": 1}, OK_REG, REAL]
+    rt, connect, tokens, events, states, sleeps = make([script], stop_after=1)
+    await run_until_cancel(rt)
+    assert states == [(True, None), (False, "KIWOOM_WS_CLOSED")]
+    assert len(events) == 1
+
+
+async def test_system_code_is_logged_escaped(caplog):
+    script = [OK_LOGIN, OK_REG, {"trnm": "SYSTEM", "code": "R1\nforged line"}]
+    rt, connect, tokens, events, states, sleeps = make([script], stop_after=1)
+    with caplog.at_level(logging.WARNING):
+        await run_until_cancel(rt)
+    assert "code='R1\\nforged line'" in caplog.text and "\nforged line" not in caplog.text
+
+
 async def test_system_frames_are_logged_by_code_only(caplog):
     script = [
         OK_LOGIN, {"trnm": "SYSTEM", "code": "R10001", "message": "handshake-text"},

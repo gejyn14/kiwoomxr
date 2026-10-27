@@ -252,8 +252,9 @@ class MarketHub:
                 instrument_code=code, state=DataState.LIVE, origin=Origin.KIWOOM, value=value,
                 received_at=received, source_at=source, correlation_id=correlation_id)
 
-        if market is None:
-            return HubSnapshot(None, *(empty(m, DataState.UNAVAILABLE, "MARKET_CLOSED")
+        if market is None:  # a broken link must not read as an ordinary close
+            state, reason = (DataState.UNAVAILABLE, "MARKET_CLOSED") if self._connected else (DataState.DISCONNECTED, self._reason)
+            return HubSnapshot(None, *(empty(m, state, reason)
                                        for m in (Quote, CandleSeries, OrderBook)))
         state = self._states.get((code, market)) or _State()
         quote = one(Quote, state.quote, state.quote_received, state.quote_at)

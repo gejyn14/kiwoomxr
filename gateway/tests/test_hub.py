@@ -102,6 +102,14 @@ def test_no_active_market_without_data_reports_unavailable_market_closed():
         assert obs.state == DataState.UNAVAILABLE and obs.reason == "MARKET_CLOSED" and obs.value is None
 
 
+def test_no_active_market_without_data_while_disconnected_reports_disconnected():
+    hub = MarketHub(Clock(kst(21, 0)), watch_codes=["005930"])
+    hub.set_connection(False, "KIWOOM_AUTH")
+    snap = hub.observations("005930", CID)
+    for obs in (snap.quote, snap.candles, snap.orderbook):
+        assert obs.state == DataState.DISCONNECTED and obs.reason == "KIWOOM_AUTH" and obs.value is None
+
+
 def test_after_close_serves_most_recent_market_as_delayed_market_closed():
     clock = Clock(kst(15, 29, 50))
     hub = live_hub(clock)

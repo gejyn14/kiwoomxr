@@ -115,7 +115,7 @@ class _AuthFailed(Exception):
 
 def _log_system(frame: dict) -> None:
     code = frame.get("code")  # the message text is not logged
-    _log.warning("kiwoom SYSTEM frame: code=%s", str(code)[:32] if isinstance(code, (str, int)) else None)
+    _log.warning("kiwoom SYSTEM frame: code=%r", str(code)[:32] if isinstance(code, (str, int)) else None)
 
 
 def _loads(raw: Any) -> dict | None:
@@ -205,8 +205,8 @@ class KiwoomRealtime:
             else:
                 if kind == "SYSTEM":
                     _log_system(frame)
-                # The REG ack's trnm is not pinned down; any non-LOGIN frame with a return_code answers it.
-                if "return_code" in frame and (kind == trnm or (trnm == "REG" and kind != "LOGIN")):
+                # The REG ack's trnm is not pinned down; any non-LOGIN, non-SYSTEM frame with a return_code answers it.
+                if "return_code" in frame and (kind == trnm or (trnm == "REG" and kind not in ("LOGIN", "SYSTEM"))):
                     return frame
 
     async def _session(self, token: str) -> None:
