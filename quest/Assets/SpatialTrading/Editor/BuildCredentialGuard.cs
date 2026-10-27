@@ -66,7 +66,8 @@ namespace SpatialTrading.Editor
         {
             var needles = new List<byte[]>();
             if (!string.IsNullOrEmpty(token)) { needles.Add(Encoding.UTF8.GetBytes(token)); needles.Add(Encoding.Unicode.GetBytes(token)); }
-            using (var zip = ZipFile.OpenRead(archive))
+            using (var file = File.OpenRead(archive))
+            using (var zip = new ZipArchive(file, ZipArchiveMode.Read))
                 foreach (var entry in zip.Entries)
                 {
                     if (Path.GetFileName(entry.FullName) == MarketDataSession.DeviceSettingsFile) return entry.FullName;

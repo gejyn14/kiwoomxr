@@ -168,6 +168,11 @@ namespace SpatialTrading.Tests
                 "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":5}",
                 "{\"url\":\"ws://192.168.0.12:8471/v1/stream\"}",
                 "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + token + "\",\"extra\":1}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"url\":\"ws://192.168.0.13:8471/v1/stream\",\"token\":\"" + token + "\"}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + token + "\",\"token\":\"" + token + "\"}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + token + "\"} trailing",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + token + "\"}{}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + new string('a', GatewayStreamContract.MaxSettingsChars) + "\"}",
                 "[]", "not json", "", null
             })
             {

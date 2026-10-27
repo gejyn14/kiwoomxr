@@ -59,7 +59,7 @@ namespace SpatialTrading.Editor
             PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneOSX, new[] { GraphicsDeviceType.Metal });
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
             PlayerSettings.runInBackground = false;
-            PlayerSettings.Android.forceInternetPermission = false;
+            PlayerSettings.Android.forceInternetPermission = true;
             QualitySettings.antiAliasing = 4;
             QualitySettings.vSyncCount = 0;
 

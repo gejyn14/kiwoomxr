@@ -97,7 +97,7 @@ namespace SpatialTrading.Market
                 _codes.Clear(); _codes.AddRange(codes);
                 if (_stream == null) BindStream();
                 _stream.Connect(url, token, codes);
-                if (!_heartbeatAt.HasValue) _heartbeatAt = Time.unscaledTime;
+                _heartbeatAt = Time.unscaledTime; // the new subscription gets a fresh heartbeat window
             }
             Changed?.Invoke();
         }
@@ -119,7 +119,7 @@ namespace SpatialTrading.Market
             try
             {
                 var file = new FileInfo(Path.Combine(Application.persistentDataPath, DeviceSettingsFile));
-                if (!file.Exists || file.Length > 64 * 1024) return false;
+                if (!file.Exists || file.Length > GatewayStreamContract.MaxSettingsChars) return false;
                 return GatewayStreamContract.TryReadSettings(File.ReadAllText(file.FullName), out url, out token);
             }
             catch (Exception error) when (error is IOException || error is UnauthorizedAccessException)
@@ -174,7 +174,7 @@ namespace SpatialTrading.Market
             var broker = beat.BrokerConnected ? null : beat.Reason ?? "BROKER_DISCONNECTED";
             var changed = _linkReason != null || _heartbeatLost || _brokerReason != broker;
             _linkReason = null; _heartbeatLost = false; _brokerReason = broker;
-            if (changed) Changed?.Invoke();
+            if (changed) _dirty = true; // coalesced in LateUpdate so a render never mixes pre-outage values with a cleared link status
         }
 
         private void OnDisconnected(string reason)

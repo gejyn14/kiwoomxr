@@ -93,11 +93,14 @@ namespace SpatialTrading.Market
             return b[0] == 10 || b[0] == 172 && b[1] >= 16 && b[1] <= 31 || b[0] == 192 && b[1] == 168;
         }
 
+        /// <summary>Largest accepted <c>gateway.json</c>, in bytes on disk and characters once read.</summary>
+        public const int MaxSettingsChars = 64 * 1024;
+
         /// <summary>Device-side <c>gateway.json</c>: exactly <c>{"url": "...", "token": "..."}</c>; never logged.</summary>
         public static bool TryReadSettings(string json, out Uri url, out string token)
         {
             url = null; token = null;
-            if (string.IsNullOrWhiteSpace(json) || json.Length > 64 * 1024) return false;
+            if (string.IsNullOrWhiteSpace(json) || json.Length > MaxSettingsChars) return false;
             try
             {
                 JToken parsed;

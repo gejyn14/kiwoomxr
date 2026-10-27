@@ -127,7 +127,7 @@ The file must contain exactly `url` and `token`; anything else is rejected. Use 
 
 - No heartbeat for more than 15 s: values received as LIVE/SNAPSHOT are shown as STALE (`GATEWAY_HEARTBEAT_LOST`). Tick or source time never makes a value stale.
 - Heartbeat `broker_connected=false`: values are shown as DISCONNECTED with the heartbeat's reason.
-- Gateway socket closed or unreachable: everything streamed is shown as DISCONNECTED (`GATEWAY_UNREACHABLE`; a rejected pairing token is `GATEWAY_UNAUTHORIZED`). The last values stay visible. Reconnects back off 1, 2, 4, then 8 s; a session that delivered data and then dropped starts again at 1 s. The first heartbeat on the new connection clears the status.
+- Gateway socket closed or unreachable: everything streamed is shown as DISCONNECTED (`GATEWAY_UNREACHABLE`; a rejected pairing token is `GATEWAY_UNAUTHORIZED`). The last values stay visible. Reconnects back off 1, 2, 4, then 8 s; the backoff restarts at 1 s as soon as a session has received its first message, however that session later ends; sessions that never deliver (connect failure, refused or unauthorized) keep backing off. The first heartbeat on the new connection clears the status.
 - A single message over 2 MiB closes the connection (`GATEWAY_MESSAGE_TOO_LARGE`). Malformed messages are dropped one at a time with a warning that omits their contents.
 - The chart's source label shows the venue of the latest observation, for example `KIWOOM · NXT  /  LIVE`.
 
