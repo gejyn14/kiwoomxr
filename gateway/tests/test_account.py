@@ -28,7 +28,7 @@ class FakeClock(Clock):
         self.now += timedelta(seconds=seconds)
 
 
-def build(balances, now=OPEN, price=Decimal("225000")):
+def build(balances, now=OPEN, price=Decimal("225000"), on_balance=None):
     clock = FakeClock(now)
     calls: list[tuple[str, datetime, dict]] = []
     queue = list(balances)
@@ -42,6 +42,8 @@ def build(balances, now=OPEN, price=Decimal("225000")):
             return httpx.Response(200, json={"acctNo": NUMBER, "return_code": 0, "return_msg": ""})
         if api == "kt00010":
             return httpx.Response(200, json=CASH)
+        if on_balance is not None:
+            on_balance(sum(1 for c in calls if c[0] == "kt00018"))
         return httpx.Response(200, json=queue.pop(0))
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -65,14 +67,14 @@ async def test_empty_balance_is_live_with_no_holdings_and_orderable_cash():
     service, _, calls, notified = build([EMPTY])
     await service.refresh()
     obs = service.observation("c1")
-    assert obs.state is DataState.LIVE and obs.source_at == OPEN
+    assert obs.state is DataState.LIVE and OPEN <= obs.source_at <= OPEN + timedelta(seconds=1)
     assert obs.value.holdings == ()
     assert obs.value.account == "123*****90"
     assert obs.value.orderable_cash == Decimal(CASH["ord_alowa"]) and obs.value.orderable_cash >= 0
     assert obs.value.total_evaluation == Decimal(0)
     bodies = {api: body for api, _, body in calls}
     assert bodies["kt00018"] == {"qry_tp": "1", "dmst_stex_tp": "KRX"}
-    assert bodies["kt00010"] == {"stk_cd": "005930", "trde_tp": "2", "uv": "225000"}
+    assert bodies["kt00010"] == {"stk_cd": "005930", "trde_tp": "2", "uv": "225000"}  # plain decimal text
     assert notified
 
 
@@ -89,7 +91,6 @@ async def test_loading_before_first_success_and_delayed_when_market_closed():
 async def test_balance_signal_requeries_within_a_second_and_coalesces_bursts():
     service, clock, calls, _ = build([EMPTY, EMPTY, EMPTY])
     await service.refresh()
-    start = clock.now
 
     def times():
         return [t for api, t, _ in calls if api == "kt00018"]
@@ -98,7 +99,7 @@ async def test_balance_signal_requeries_within_a_second_and_coalesces_bursts():
         service.balance_changed()
     await service.wait_idle()
     assert len(times()) == 2
-    assert times()[1] - start == timedelta(seconds=2)  # 1s delay, then 2s spacing from the first query
+    assert times()[1] - times()[0] == timedelta(seconds=2)  # 2s spacing from the first query
     clock.now = times()[1] + timedelta(seconds=0.5)
     service.balance_changed()
     await service.wait_idle()
@@ -135,3 +136,43 @@ async def test_orderable_cash_skipped_without_price():
     await service.refresh()
     assert not [c for c in calls if c[0] == "kt00010"]
     assert service.observation("c").value.orderable_cash is None
+
+
+async def test_signal_during_inflight_query_triggers_another_query():
+    holder = {}
+
+    def hook(n):
+        if n == 1:
+            holder["s"].balance_changed()
+
+    service, clock, calls, _ = build([EMPTY, ONE], on_balance=hook)
+    holder["s"] = service
+    service.balance_changed()
+    await service.wait_idle()
+    times = [t for api, t, _ in calls if api == "kt00018"]
+    assert len(times) == 2
+    assert times[1] - times[0] >= timedelta(seconds=2)
+    assert len(service.observation("c").value.holdings) == 1
+
+
+async def test_spacing_holds_when_poll_holds_the_lock_and_a_signal_arrives():
+    holder = {}
+
+    def hook(n):
+        if n == 1:
+            holder["s"].balance_changed()
+
+    service, clock, calls, _ = build([EMPTY, EMPTY], on_balance=hook)
+    holder["s"] = service
+    await service.refresh()  # poll refresh; the signal fires while it is in flight
+    await service.wait_idle()
+    times = [t for api, t, _ in calls if api == "kt00018"]
+    assert len(times) == 2 and times[1] - times[0] >= timedelta(seconds=2)
+
+
+async def test_account_rest_calls_are_at_least_a_quarter_second_apart():
+    service, _, calls, _ = build([EMPTY])
+    await service.refresh()
+    assert [c[0] for c in calls] == ["ka00001", "kt00018", "kt00010"]
+    gaps = [b[1] - a[1] for a, b in zip(calls, calls[1:])]
+    assert all(g >= timedelta(seconds=0.25) for g in gaps)

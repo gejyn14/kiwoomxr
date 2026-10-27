@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 POLL_SECONDS = 60
 SIGNAL_DELAY = timedelta(seconds=1)
 MIN_SPACING = timedelta(seconds=2)
+REST_GAP = 0.25
 ORDERABLE_CODE = "005930"
 FAILED = "ACCOUNT_QUERY_FAILED"
 
@@ -44,6 +45,7 @@ class AccountService:
         self._reason: str | None = None
         self._last_balance_call: datetime | None = None
         self._signal_task: asyncio.Task | None = None
+        self._pending = False
         self._lock = asyncio.Lock()
 
     async def run(self) -> None:
@@ -52,7 +54,9 @@ class AccountService:
             await self._sleep(POLL_SECONDS)
 
     def balance_changed(self) -> None:
-        """Realtime balance signal. Bursts coalesce into one query ~1s later, at least 2s after the last."""
+        """Realtime balance signal. Bursts coalesce into one query ~1s later, at least 2s after the last.
+        A signal that lands while a query is in flight leaves `_pending` set, so another query follows."""
+        self._pending = True
         if self._signal_task is None or self._signal_task.done():
             self._signal_task = asyncio.ensure_future(self._signalled_refresh())
 
@@ -62,21 +66,26 @@ class AccountService:
             await asyncio.shield(task)
 
     async def _signalled_refresh(self) -> None:
-        await self._sleep(SIGNAL_DELAY.total_seconds())
-        last = self._last_balance_call
-        if last is not None:
-            wait = (last + MIN_SPACING - self._clock()).total_seconds()
-            if wait > 0:
-                await self._sleep(wait)
-        await self.refresh()
+        while True:
+            await self._sleep(SIGNAL_DELAY.total_seconds())
+            await self.refresh()
+            if not self._pending:
+                return
 
     async def refresh(self) -> None:
         async with self._lock:
             try:
                 if self._masked is None:
                     self._masked = mask_account(await self._rest.account_number())
+                    await self._sleep(REST_GAP)
+                if self._last_balance_call is not None:
+                    wait = (self._last_balance_call + MIN_SPACING - self._clock()).total_seconds()
+                    if wait > 0:
+                        await self._sleep(wait)
+                self._pending = False
                 self._last_balance_call = self._clock()
                 raw = await self._rest.balance()
+                await self._sleep(REST_GAP)
                 cash = await self._orderable_cash()
                 value = Balance(
                     account=self._masked,

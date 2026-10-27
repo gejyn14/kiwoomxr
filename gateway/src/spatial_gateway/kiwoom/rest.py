@@ -171,7 +171,7 @@ class KiwoomRest:
     async def orderable_cash(self, code: str, price: Decimal) -> Decimal | None:
         """kt00010 `ord_alowa` (live fixture: zero-padded integer string). Read-only simulation query."""
         data = await self.request(
-            "kt00010", "/api/dostk/acnt", {"stk_cd": code, "trde_tp": "2", "uv": str(price)}
+            "kt00010", "/api/dostk/acnt", {"stk_cd": code, "trde_tp": "2", "uv": format(price, "f")}
         )
         return signed(_text(data, "ord_alowa"))
 
