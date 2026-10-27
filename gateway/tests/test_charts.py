@@ -52,15 +52,37 @@ def test_daily_series_updates_last_bar_from_krx_trades_only():
 
 
 def test_four_hour_series_follows_active_market_with_label():
-    clock = Clock(kst(16, 10))
+    clock = Clock(kst(16, 0))
     s = store(clock)
     s.seed("005930", Market.KRX, "4H", [bar(kst(9, 0), 100), bar(kst(13, 0), 101)])
     s.seed("005930", Market.NXT, "4H", [bar(kst(15, 30), 102)])
+    clock.now = kst(16, 10)
+    market, obs = s.observation("005930", "4H", CID, True, None)
+    # Seed-only and seeded 10 minutes ago: a REST snapshot, not a realtime series.
+    assert market == Market.NXT and obs.state == DataState.DELAYED
+    assert s.apply_trade(trade(kst(16, 10), 103, Market.NXT))
     market, obs = s.observation("005930", "4H", CID, True, None)
     assert market == Market.NXT and obs.state == DataState.LIVE
     assert obs.value.interval == "4H" and obs.value.candles[-1].period_key == "202610281530"
     clock.now = kst(10, 0)
     assert s.observation("005930", "4H", CID, True, None)[0] == Market.KRX
+
+
+def test_seed_only_series_is_live_only_within_the_seed_window():
+    clock = Clock(kst(10, 0))
+    s = store(clock)
+    s.seed("005930", Market.KRX, "1D", [bar(kst(9, 0, 27), 223000), bar(kst(9, 0), 224500)])
+    assert s.observation("005930", "1D", CID, True, None)[1].state == DataState.LIVE
+    clock.now = kst(10, 2)
+    assert s.observation("005930", "1D", CID, True, None)[1].state == DataState.LIVE
+    clock.now = kst(10, 2) + (kst(10, 1) - kst(10, 0)) / 60  # one second past the 2-minute window
+    obs = s.observation("005930", "1D", CID, True, None)[1]
+    assert obs.state == DataState.DELAYED and obs.value is not None and obs.reason is None
+    assert s.apply_trade(trade(kst(10, 3), 225000))
+    assert s.observation("005930", "1D", CID, True, None)[1].state == DataState.LIVE
+    s.seed("005930", Market.KRX, "1D", [bar(kst(9, 0), 224500)])  # a reseed keeps the folded-in tick
+    clock.now = kst(10, 30)
+    assert s.observation("005930", "1D", CID, True, None)[1].state == DataState.LIVE
 
 
 def test_kospi_during_nxt_hours_is_market_closed_daily():

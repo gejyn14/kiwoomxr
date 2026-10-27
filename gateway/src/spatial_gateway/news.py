@@ -39,6 +39,10 @@ FEED_LABELS = {"www.hankyung.com": "한국경제", "www.yna.co.kr": "연합뉴�
 
 DART_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
 RSS_PERIOD = timedelta(minutes=5)
+# A dead poll task must not leave old headlines LIVE: past three RSS periods without a success, the feed is overdue.
+OVERDUE_AFTER = 3 * RSS_PERIOD
+OVERDUE = "NEWS_REFRESH_OVERDUE"
+FAILED = "NEWS_FETCH_FAILED"
 DART_PERIOD = timedelta(minutes=10)
 MAX_ITEMS = 40
 USER_AGENT = "Mozilla/5.0 (compatible; kiwoomxr-gateway)"
@@ -170,7 +174,10 @@ class NewsService:
     def observation(self, cid: str) -> Observation[NewsFeed]:
         merged = merge_items(self.items.values())
         value = NewsFeed(items=tuple(merged)) if self.last_success else None
-        connected = value is None or any(self.ok.values())
+        # Not yet attempted reads LOADING; every source failing (even before any success) reads DISCONNECTED.
+        connected, reason = not self.ok or any(self.ok.values()), FAILED
+        if connected and self.last_success is not None and self.clock() - self.last_success > OVERDUE_AFTER:
+            connected, reason = False, OVERDUE
         return observe(NewsFeed, NEWS, cid, value=value, received=self.last_success, source=self.last_success,
-                       connected=connected, reason=None if connected else "NEWS_FETCH_FAILED",
+                       connected=connected, reason=None if connected else reason,
                        closed=False, watched=True, origin=Origin.NEWS)

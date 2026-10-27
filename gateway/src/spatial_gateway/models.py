@@ -157,7 +157,7 @@ _MONEY = dict(default=None, max_digits=28, decimal_places=8)
 
 class Holding(Contract):
     code: str = Field(pattern=r"^[0-9]{6}$")
-    name: str
+    name: str = Field(min_length=1)
     quantity: int = Field(ge=0, le=9223372036854775807, strict=True)
     average_price: Decimal | None = Field(**_MONEY)
     current_price: Decimal | None = Field(**_MONEY)

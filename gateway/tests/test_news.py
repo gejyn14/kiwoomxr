@@ -231,3 +231,25 @@ def test_same_title_filings_of_different_companies_survive():
 
 def test_same_title_news_still_collapses():
     assert len(news.merge_items([[item("dup", 1)], [item("dup", 2)]])) == 1
+
+
+async def test_every_feed_failing_at_first_boot_reads_disconnected_not_loading():
+    svc = service(Net(), dart_api_key=None)  # both RSS feeds return 500
+    await svc.poll()
+    obs = svc.observation("c")
+    assert obs.state == DataState.DISCONNECTED and obs.reason == "NEWS_FETCH_FAILED"
+    assert obs.value is None
+
+
+async def test_feed_reads_disconnected_once_the_last_success_is_older_than_three_rss_periods():
+    clock = {"now": NOW}
+    net = Net(a=rss_xml(["A1"]), b=rss_xml(["B1"]))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(net.handler))
+    svc = news.NewsService(client, settings(dart_api_key=None), clock=lambda: clock["now"], notify=lambda: None)
+    await svc.poll()
+    clock["now"] = NOW + timedelta(minutes=15)
+    assert svc.observation("c").state == DataState.LIVE
+    clock["now"] = NOW + timedelta(minutes=15, seconds=1)
+    obs = svc.observation("c")
+    assert obs.state == DataState.DISCONNECTED and obs.reason == "NEWS_REFRESH_OVERDUE"
+    assert {i.title for i in obs.value.items} == {"A1", "B1"}

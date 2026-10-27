@@ -21,6 +21,9 @@ MIN_SPACING = timedelta(seconds=2)
 REST_GAP = 0.25
 ORDERABLE_CODE = "005930"
 FAILED = "ACCOUNT_QUERY_FAILED"
+# A dead poll task must not leave the balance LIVE: past three polls without a success, the balance is overdue.
+OVERDUE_AFTER = timedelta(seconds=3 * POLL_SECONDS)
+OVERDUE = "ACCOUNT_REFRESH_OVERDUE"
 
 
 class AccountService:
@@ -122,9 +125,12 @@ class AccountService:
 
     def observation(self, cid: str) -> Observation[Balance]:
         now = self._clock()
+        connected, reason = self._connected, self._reason
+        if connected and self._received is not None and now - self._received > OVERDUE_AFTER:
+            connected, reason = False, OVERDUE
         return observe(
             Balance, ACCOUNT, cid,
             value=self._value, received=self._received, source=self._received,
-            connected=self._connected, reason=self._reason,
+            connected=connected, reason=reason,
             closed=active_market(now) is None, watched=True,
         )

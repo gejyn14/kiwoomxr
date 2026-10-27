@@ -7,7 +7,7 @@ form an invalid CandleSeries are dropped whole, so existing state is never corru
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 
 Interval = Literal["1D", "4H"]
 MAX_BARS = 120
+# Same rule as the hub's 1-minute series: a REST seed reads LIVE only while it is this fresh; with no realtime tick
+# folded in after that, the series is a snapshot and reads DELAYED.
+SEED_LIVE_WINDOW = timedelta(minutes=2)
 
 
 @dataclass
@@ -178,6 +181,11 @@ class ChartStore:
         obs = observe(CandleSeries, code, cid, value=value, received=state.received if state else None,
                       source=(state.source or (state.bars[-1].start if state.bars else None)) if state else None,
                       connected=connected, reason=reason, closed=closed, watched=self._watched(code))
+        if (obs.state == DataState.LIVE and state is not None and state.source is None
+                and self._clock() - state.received > SEED_LIVE_WINDOW):
+            obs = Observation[CandleSeries](
+                instrument_code=code, state=DataState.DELAYED, origin=Origin.KIWOOM, value=obs.value,
+                received_at=obs.received_at, source_at=obs.source_at, correlation_id=cid)
         return market, obs
 
     def index_quote(self, code: str, cid: str, connected: bool, reason: str | None) -> Observation[Quote]:

@@ -188,3 +188,34 @@ async def test_failed_account_lookup_is_not_retried_by_the_signal_loop():
     await asyncio.wait_for(service.wait_idle(), 5)
     assert [c[0] for c in calls] == ["ka00001"]
     assert service.observation("c").reason == "ACCOUNT_QUERY_FAILED"
+
+
+async def test_blank_holding_name_falls_back_to_the_stock_code():
+    blank = json.loads(json.dumps(ONE))
+    blank["acnt_evlt_remn_indv_tot"][0]["stk_nm"] = "   "
+    service, _, _, _ = build([blank])
+    await service.refresh()
+    obs = service.observation("c")
+    assert obs.state is DataState.LIVE
+    (holding,) = obs.value.holdings
+    assert holding.code == "005930" and holding.name == "005930"
+
+
+def test_holding_name_must_not_be_empty():
+    from pydantic import ValidationError
+
+    from spatial_gateway.models import Holding
+    with pytest.raises(ValidationError):
+        Holding(code="005930", name="", quantity=1, average_price=None, current_price=None, profit=None,
+                profit_rate=None)
+
+
+async def test_balance_reads_disconnected_once_the_last_refresh_is_older_than_three_polls():
+    service, clock, _, _ = build([EMPTY])
+    await service.refresh()
+    clock.now += timedelta(seconds=179)
+    assert service.observation("c").state is DataState.LIVE
+    clock.now += timedelta(seconds=2)
+    obs = service.observation("c")
+    assert obs.state is DataState.DISCONNECTED and obs.reason == "ACCOUNT_REFRESH_OVERDUE"
+    assert obs.value is not None and obs.value.account == "123*****90"

@@ -42,10 +42,20 @@ def test_bars_outside_session_are_dropped_and_markets_never_mix():
     assert bucket_start(at(28, 8, 10), Market.KRX) is None
     assert bucket_start(at(28, 8, 10), Market.NXT) == at(28, 8)
     assert bucket_start(at(28, 9), Market.NXT) is None
-    assert bucket_start(at(28, 15, 30), Market.KRX) is None
+    assert bucket_start(at(28, 15, 31), Market.KRX) is None  # 15:30:00 itself is the closing auction
 
 
 def test_buckets_reset_each_day():
     bars = [bar(at(28, 9), 1, 2, 1, 2, 5), bar(at(27, 13), 1, 2, 1, 2, 5)]
     out = four_hour(bars, Market.KRX)
     assert [b.start for b in out] == [at(27, 13), at(28, 9)]
+
+
+def test_krx_closing_auction_print_at_1530_lands_in_the_afternoon_bucket():
+    assert bucket_start(at(28, 15, 30), Market.KRX) == at(28, 13)
+    assert bucket_start(datetime(2026, 10, 28, 15, 30, 1, tzinfo=KST), Market.KRX) is None
+    bars = [bar(at(28, 15, 0), 100, 101, 99, 100, 5), bar(at(28, 15, 30), 100, 102, 100, 102, 7)]
+    (afternoon,) = four_hour(bars, Market.KRX)
+    assert afternoon.start == at(28, 13) and afternoon.close == Decimal(102) and afternoon.volume == 12
+    # NXT keeps its own 15:30 bucket start.
+    assert bucket_start(at(28, 15, 30), Market.NXT) == at(28, 15, 30)

@@ -199,7 +199,7 @@ def _parse_holding(row: dict) -> Holding | None:
         return None
     return Holding(
         code=code,
-        name=(_text(row, "stk_nm") or "").strip(),
+        name=(_text(row, "stk_nm") or "").strip() or code,  # a blank name must not drop the whole balance
         quantity=qty,
         average_price=price(_text(row, "pur_pric")),
         current_price=price(_text(row, "cur_prc")),

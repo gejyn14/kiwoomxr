@@ -7,13 +7,14 @@ from spatial_gateway.kiwoom.rest import Bar
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.market.session import Market
 
-# Bucket (start, end) windows per market; half-open, cut at session end.
-_BUCKETS: dict[Market, tuple[tuple[time, time], ...]] = {
-    Market.KRX: ((time(9, 0), time(13, 0)), (time(13, 0), time(15, 30))),
+# Bucket (start, end, end_inclusive) windows per market; half-open and cut at session end, except that the KRX
+# afternoon bucket keeps the 15:30:00 closing-auction print, so the last four-hour close matches the daily close.
+_BUCKETS: dict[Market, tuple[tuple[time, time, bool], ...]] = {
+    Market.KRX: ((time(9, 0), time(13, 0), False), (time(13, 0), time(15, 30), True)),
     Market.NXT: (
-        (time(8, 0), time(8, 50)),
-        (time(15, 30), time(19, 30)),
-        (time(19, 30), time(20, 0)),
+        (time(8, 0), time(8, 50), False),
+        (time(15, 30), time(19, 30), False),
+        (time(19, 30), time(20, 0), False),
     ),
 }
 
@@ -22,8 +23,8 @@ def bucket_start(at: datetime, market: Market) -> datetime | None:
     """Start of the four-hour bucket containing `at`, or None outside the market's session."""
     local = at.astimezone(KST) if at.tzinfo else at.replace(tzinfo=KST)
     clock = local.timetz().replace(tzinfo=None)
-    for start, end in _BUCKETS[market]:
-        if start <= clock < end:
+    for start, end, inclusive in _BUCKETS[market]:
+        if start <= clock < end or (inclusive and clock == end):
             return local.replace(
                 hour=start.hour, minute=start.minute, second=0, microsecond=0
             )
