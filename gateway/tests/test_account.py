@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -26,9 +27,10 @@ CLOSED = datetime(2026, 10, 27, 22, 0, tzinfo=KST)
 class FakeClock(Clock):
     async def sleep(self, seconds: float) -> None:
         self.now += timedelta(seconds=seconds)
+        await asyncio.sleep(0)  # yield so concurrent tasks interleave
 
 
-def build(balances, now=OPEN, price=Decimal("225000"), on_balance=None):
+def build(balances, now=OPEN, price=Decimal("225000"), on_balance=None, account_fail=False):
     clock = FakeClock(now)
     calls: list[tuple[str, datetime, dict]] = []
     queue = list(balances)
@@ -38,6 +40,8 @@ def build(balances, now=OPEN, price=Decimal("225000"), on_balance=None):
             return httpx.Response(200, json={"token": "T", "expires_dt": "20271027235959", "return_code": 0})
         api = request.headers["api-id"]
         calls.append((api, clock.now, json.loads(request.content)))
+        if api == "ka00001" and account_fail:
+            return httpx.Response(200, json={"return_code": 8001, "return_msg": "x"})
         if api == "ka00001":
             return httpx.Response(200, json={"acctNo": NUMBER, "return_code": 0, "return_msg": ""})
         if api == "kt00010":
@@ -176,3 +180,11 @@ async def test_account_rest_calls_are_at_least_a_quarter_second_apart():
     assert [c[0] for c in calls] == ["ka00001", "kt00018", "kt00010"]
     gaps = [b[1] - a[1] for a, b in zip(calls, calls[1:])]
     assert all(g >= timedelta(seconds=0.25) for g in gaps)
+
+
+async def test_failed_account_lookup_is_not_retried_by_the_signal_loop():
+    service, _, calls, _ = build([], account_fail=True)
+    service.balance_changed()
+    await asyncio.wait_for(service.wait_idle(), 5)
+    assert [c[0] for c in calls] == ["ka00001"]
+    assert service.observation("c").reason == "ACCOUNT_QUERY_FAILED"

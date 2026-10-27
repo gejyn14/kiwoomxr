@@ -68,11 +68,10 @@ class AccountService:
     async def _signalled_refresh(self) -> None:
         while True:
             await self._sleep(SIGNAL_DELAY.total_seconds())
-            await self.refresh()
-            if not self._pending:
-                return
+            if not await self.refresh() or not self._pending:
+                return  # a failed query is retried by the 60s poll, not by the signal loop
 
-    async def refresh(self) -> None:
+    async def refresh(self) -> bool:
         async with self._lock:
             try:
                 if self._masked is None:
@@ -100,12 +99,16 @@ class AccountService:
                 log.warning("account query failed code=%s type=%s", code, type(error).__name__)
                 self._connected = False
                 self._reason = FAILED
+                self._pending = False
+                ok = False
             else:
                 self._value = value
                 self._received = self._clock()
                 self._connected = True
                 self._reason = None
+                ok = True
         self._notify()
+        return ok
 
     async def _orderable_cash(self) -> Decimal | None:
         price = self._last_price(ORDERABLE_CODE)
