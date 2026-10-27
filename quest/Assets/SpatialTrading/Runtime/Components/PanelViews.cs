@@ -86,6 +86,8 @@ namespace SpatialTrading.Components
             var state = book?.State ?? DataState.Unavailable;
             var reason = book?.Reason;
             var status = ViewFormat.Join(ViewFormat.Badge(state, reason), market, "상위 " + depth + "호가");
+            var qState = quote?.Value != null ? quote.State : DataState.Live;
+            if (qState != DataState.Live) status += " · 시세 " + ViewFormat.Badge(qState, quote.Reason);
             var hint = StatusText.Hint(reason);
 
             // Levels by rank; missing ranks stay as placeholder rows so the grid keeps its shape.
@@ -93,8 +95,8 @@ namespace SpatialTrading.Components
             var bidQ = new long?[depth]; var bidP = new decimal?[depth];
             if (snap != null)
             {
-                foreach (var l in snap.Asks.Where(l => l.Rank <= depth)) { askQ[l.Rank - 1] = l.Quantity; askP[l.Rank - 1] = l.Price; }
-                foreach (var l in snap.Bids.Where(l => l.Rank <= depth)) { bidQ[l.Rank - 1] = l.Quantity; bidP[l.Rank - 1] = l.Price; }
+                foreach (var l in snap.Asks.Where(l => l.Rank >= 1 && l.Rank <= depth)) { askQ[l.Rank - 1] = l.Quantity; askP[l.Rank - 1] = l.Price; }
+                foreach (var l in snap.Bids.Where(l => l.Rank >= 1 && l.Rank <= depth)) { bidQ[l.Rank - 1] = l.Quantity; bidP[l.Rank - 1] = l.Price; }
             }
             long max = 0, askSum = 0, bidSum = 0;
             for (var i = 0; i < depth; i++)
@@ -157,7 +159,7 @@ namespace SpatialTrading.Components
                     if (candles.Count > 1)
                     {
                         var prev = candles[candles.Count - 2].Close;
-                        change = ViewFormat.Change(c - prev, (c - prev) * 100m / prev);
+                        change = ViewFormat.Change(c - prev, prev > 0m ? (c - prev) * 100m / prev : (decimal?)null);
                     }
                     else change = ViewFormat.None;
                 }
@@ -183,15 +185,14 @@ namespace SpatialTrading.Components
         static readonly TimeSpan Kst = TimeSpan.FromHours(9);
 
         /// <summary>
-        /// Items mentioning the selected code first, newest first inside each group. "Today" for the time text is
-        /// <paramref name="now"/>, else the observation's receipt time, else the newest item's day (all in KST).
+        /// Items mentioning the selected code first, newest first inside each group. "Today" for the time text is the
+        /// caller's <paramref name="now"/> (compared in KST), never the receipt time, so stale items read as dates.
         /// </summary>
-        public static IReadOnlyList<NewsRowView> Rank(Observation<NewsFeed> feed, string selectedCode, int max = 8,
-            DateTimeOffset? now = null)
+        public static IReadOnlyList<NewsRowView> Rank(Observation<NewsFeed> feed, string selectedCode, DateTimeOffset now, int max = 8)
         {
             var items = feed?.Value?.Items;
             if (items == null || items.Count == 0 || max <= 0) return new List<NewsRowView>().AsReadOnly();
-            var today = (now ?? feed.ReceivedAt ?? items.Max(i => i.PublishedAt)).ToOffset(Kst).Date;
+            var today = now.ToOffset(Kst).Date;
             bool Hit(NewsItem i) => selectedCode != null && i.Mentions.Contains(selectedCode);
             return items.OrderByDescending(Hit).ThenByDescending(i => i.PublishedAt).Take(max)
                 .Select(i =>
@@ -268,6 +269,13 @@ namespace SpatialTrading.Components
         OrderView(IReadOnlyList<OrderTypeButtonView> types, string price, bool prepare, string lockReason, string badge)
         { Types = types; PriceText = price; PrepareEnabled = prepare; LockReason = lockReason; Badge = badge; }
 
+        static Tuple<string, string> Stale<T>(Observation<T> o, string what) where T : class
+        {
+            var st = o?.State ?? DataState.Unavailable;
+            if (st == DataState.Live || st == DataState.Delayed) return null;
+            return Tuple.Create(ViewFormat.Badge(st, o?.Reason), what + " " + StatusText.State(st, o?.Reason));
+        }
+
         /// <summary>
         /// A limit order prices at the best ask of the book; every other type needs a last price (the optional quote)
         /// as its reference, exactly as <see cref="OrderTicket.TryPrepare"/> does.
@@ -280,13 +288,18 @@ namespace SpatialTrading.Components
             var types = Order.Select(t => new OrderTypeButtonView(OrderTypeTable.DisplayName(t),
                 !locked && OrderTypeTable.Enabled(t, session), ticket.Type == t,
                 locked ? ticket.LockReason : OrderTypeTable.DisabledReason(t, session))).ToList().AsReadOnly();
-            decimal? bestAsk = book?.Value?.Asks.Where(l => l.Rank == 1).Select(l => l.Price).FirstOrDefault();
+            var ask1 = book?.Value?.Asks.FirstOrDefault(l => l.Rank == 1);
+            decimal? bestAsk = ask1 != null && ask1.Price > 0m ? ask1.Price : null;
             var lastPrice = quote?.Value?.LastPrice;
             var price = ticket.Type == OrderType.Limit ? ViewFormat.Number(bestAsk) : OrderTypeTable.DisplayName(ticket.Type);
             var refOk = ticket.Type == OrderType.Limit ? bestAsk > 0m : lastPrice > 0m;
-            var prepare = !locked && OrderTypeTable.Enabled(ticket.Type, session) && refOk;
+            // The book (and the quote for non-limit types) must be Live or Delayed; otherwise the state is the reason.
+            var bad = Stale(book, "호가") ?? (ticket.Type == OrderType.Limit ? null : Stale(quote, "시세"));
+            var prepare = !locked && ticket.HasSelection && OrderTypeTable.Enabled(ticket.Type, session) && refOk && bad == null;
             var badge = ticket.State == TicketState.Preflight ? "PREFLIGHT" : locked ? "LOCKED" : "READY";
-            return new OrderView(types, price, prepare, ticket.LockReason, badge);
+            var lockReason = ticket.LockReason;
+            if (!locked && bad != null) { badge = bad.Item1; lockReason = bad.Item2; }
+            return new OrderView(types, price, prepare, lockReason, badge);
         }
     }
 }

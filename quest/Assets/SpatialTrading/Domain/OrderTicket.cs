@@ -102,6 +102,7 @@ namespace SpatialTrading.Domain
         public OrderType Type { get; private set; } = OrderType.Limit;
         public int Quantity => 1;
         public bool SellLocked => true;
+        public bool HasSelection => _instrument != null;
 
         public void Select(InstrumentRef instrument, TradingSession session)
         {

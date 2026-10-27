@@ -79,13 +79,13 @@ namespace SpatialTrading.Tests
                 Item("삼성전자 전날 기사", 15, 0, new[] { "005930" }, day: 27),
                 Item("하이닉스", 10, 40, new[] { "000660" }),
             });
-            var rows = NewsView.Rank(Live(feed), "005930");
+            var rows = NewsView.Rank(Live(feed), "005930", Now);
             Assert.That(rows[0].Title, Is.EqualTo("삼성전자 신제품"));
             Assert.That(rows[1].Title, Is.EqualTo("삼성전자 전날 기사"));
             Assert.That(rows[2].Title, Is.EqualTo("시장 전체 기사"));
             Assert.That(rows[0].TimeText, Is.EqualTo("09:10"));
             Assert.That(rows[1].TimeText, Is.EqualTo("10/27"));
-            Assert.That(NewsView.Rank(Live(feed), "005930", 2).Count, Is.EqualTo(2));
+            Assert.That(NewsView.Rank(Live(feed), "005930", Now, 2).Count, Is.EqualTo(2));
         }
 
         [Test]
@@ -96,7 +96,7 @@ namespace SpatialTrading.Tests
                 Item("자기주식 취득", 10, 0, new[] { "005930" }, filing: true, source: "DART"),
                 Item("일반 기사", 9, 0, new[] { "005930" }, source: "연합뉴스"),
             });
-            var rows = NewsView.Rank(Live(feed), "005930");
+            var rows = NewsView.Rank(Live(feed), "005930", Now);
             Assert.That(rows[0].IsFiling, Is.True);
             Assert.That(rows[0].Tag, Is.EqualTo("공시"));
             Assert.That(rows[1].IsFiling, Is.False);
@@ -181,6 +181,66 @@ namespace SpatialTrading.Tests
             var m = OrderView.From(t, book, TradingSession.KrxRegular, Live(new QuoteSnapshot("005930", 224500m, null, null, null)));
             Assert.That(m.PriceText, Is.EqualTo("시장가"));
             Assert.That(m.PrepareEnabled, Is.True);
+        }
+
+        [Test]
+        public void NewsTimeTextUsesGivenNowNotReceiptTime()
+        {
+            var feed = new NewsFeed(new[] { Item("오늘 기사", 9, 10, new string[0]) });
+            var later = new DateTimeOffset(2026, 10, 29, 9, 0, 0, Kst);
+            Assert.That(NewsView.Rank(Live(feed), "005930", Now)[0].TimeText, Is.EqualTo("09:10"));
+            Assert.That(NewsView.Rank(Live(feed), "005930", later)[0].TimeText, Is.EqualTo("10/28"));
+        }
+
+        [Test]
+        public void OrderViewWithoutBestAskShowsDashAndCannotPrepare()
+        {
+            var t = new OrderTicket();
+            t.Select(TraderCatalog.Samsung, TradingSession.Nxt);
+            var v = OrderView.From(t, Live(Book(new long[0], new long[] { 1 })), TradingSession.Nxt);
+            Assert.That(v.PriceText, Is.EqualTo("—"));
+            Assert.That(v.PrepareEnabled, Is.False);
+        }
+
+        [Test]
+        public void OrderViewNeedsFreshBookAndQuote()
+        {
+            var t = new OrderTicket();
+            t.Select(TraderCatalog.Samsung, TradingSession.Nxt);
+            var b = Book(new long[] { 1 }, new long[] { 1 });
+            foreach (var st in new[] { DataState.Disconnected, DataState.Stale })
+            {
+                var v = OrderView.From(t, new Observation<OrderBookSnapshot>(b, st, DataOrigin.Kiwoom, Now, Now), TradingSession.Nxt);
+                Assert.That(v.PrepareEnabled, Is.False);
+                Assert.That(v.Badge, Is.EqualTo(st.ToString().ToUpperInvariant()));
+                Assert.That(v.LockReason, Does.Contain(StatusText.Name(st)));
+            }
+            var delayed = new Observation<OrderBookSnapshot>(b, DataState.Delayed, DataOrigin.Kiwoom, Now);
+            Assert.That(OrderView.From(t, delayed, TradingSession.Nxt).PrepareEnabled, Is.True);
+            t.Select(TraderCatalog.Samsung, TradingSession.KrxRegular);
+            var staleQ = new Observation<QuoteSnapshot>(new QuoteSnapshot("005930", 1m, null, null, null), DataState.Stale, DataOrigin.Kiwoom, Now);
+            var m = OrderView.From(t, Live(b), TradingSession.KrxRegular, staleQ);
+            Assert.That(m.PrepareEnabled, Is.False);
+            Assert.That(m.Badge, Is.EqualTo("STALE"));
+            Assert.That(m.LockReason, Does.Contain("시세"));
+        }
+
+        [Test]
+        public void UnselectedTicketCannotPrepare()
+        {
+            var v = OrderView.From(new OrderTicket(), Live(Book(new long[] { 1 }, new long[] { 1 })), TradingSession.Nxt);
+            Assert.That(v.PrepareEnabled, Is.False);
+        }
+
+        [Test]
+        public void BookIgnoresLevelsBeyondDepthAndFlagsNonLiveQuote()
+        {
+            var b = Book(new long[] { 1, 1, 1, 1 }, new long[] { 1, 1, 1, 1 });
+            var q = new Observation<QuoteSnapshot>(new QuoteSnapshot("005930", 1m, null, null, null), DataState.Stale, DataOrigin.Kiwoom, Now);
+            var v = OrderBookView.From(Live(b), q, 2, TraderCatalog.Samsung, "KRX");
+            Assert.That(v.Asks.Count, Is.EqualTo(2));
+            Assert.That(v.Asks[0].PriceText, Is.EqualTo("225,500"));
+            Assert.That(v.Status, Does.Contain("STALE"));
         }
     }
 }
