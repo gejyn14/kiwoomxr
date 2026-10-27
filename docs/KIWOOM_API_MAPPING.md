@@ -1,12 +1,14 @@
 # Kiwoom API mapping and specification gates
 
-Status: Milestone 0 source review, 2026-09-17. **No broker API has been called or implemented.**
+Status: Milestone 0 source review, 2026-09-17; updated 2026-10-27. Market-data capabilities (au10001, ka10080, realtime 0B/0D for KRX and NXT) are implemented in the gateway and verified **offline only**; no live Kiwoom call has succeeded (au10001 returns 8001, app key/secret validation failed). Order APIs are not implemented. Design: [investment-jarvis design](superpowers/specs/2026-10-27-investment-jarvis-design.md); plan: [live market pipeline](superpowers/plans/2026-10-27-live-market-pipeline.md).
 
 ## Authoritative source boundary
 
 `K1` is the repository-supplied `docs/미국 REST API 문서.xlsx`, inspected read-only. It contains 339 sheets, including domestic stock REST and realtime sheets despite its filename. The workbook labels itself `키움 REST API`. Its release/version/current operational validity is not established by the supplied file. It is the sole authorized Kiwoom specification for this project; no external Kiwoom website, prior knowledge, third-party client or model-generated example was used to fill gaps.
 
-**Source decision, 2026-09-20:** the user reaffirmed use of the current repository specification only. External Kiwoom documentation must not be consulted or imported to resolve gaps. K1's local SHA-256 was rechecked on this date and is unchanged; no additional specification was found. K-01–K-10 remain blocked. This is a source-policy/hash verification, not a new broker integration test.
+**Source decision, 2026-10-27 (supersedes the 2026-09-20 decision below):** the user decided to use the Kiwoom production domain and to accept kiwoom-cli documentation and implementation as evidence in addition to K1. The sentences below that exclude external documentation are historical.
+
+**Source decision, 2026-09-20 (historical):** the user reaffirmed use of the current repository specification only. External Kiwoom documentation must not be consulted or imported to resolve gaps. K1's local SHA-256 was rechecked on this date and is unchanged; no additional specification was found. K-01–K-10 remain blocked. This is a source-policy/hash verification, not a new broker integration test.
 
 The original workbook remains local and is excluded from Git because its examples contain credential-shaped key/token values. A fresh clone must receive the authorized source file separately and verify its hash before extending any integration. This mapping preserves sheet/cell provenance; it does not substitute for missing specification semantics.
 
@@ -24,7 +26,7 @@ Status vocabulary:
 - `BLOCKED_BY_MISSING_SPEC`: a necessary rule is missing, ambiguous or contradictory. Stop the affected integration. Keep any verified portions in the mapping, but do not ship guessed transport/parsing/order semantics.
 - `OUT_OF_SCOPE`: intentionally excluded products/operations. Their presence in the workbook does not enable them.
 
-All listed mappings currently have untested runtime behavior. Authentication gap K-01 transitively blocks credential-dependent live capability calls. The other gates specify additional capability-local blockers. Source fixtures and Quest shell work may proceed without live integration.
+Mappings for the market-data capabilities listed above now have offline-tested gateway implementations; none has live runtime evidence. All other mappings (account, orders) remain untested documentation. Live verification requires a valid app key.
 
 ## Transport and common errors
 
@@ -136,7 +138,7 @@ No `LOGIN`, `PING`, login, reconnect or per-second quota definition was found in
 
 ## Blocking specification register
 
-Every row is **BLOCKED_BY_MISSING_SPEC** until the stated repository evidence is supplied and reviewed. Do not resolve these through undocumented trial-and-error against live orders.
+Historical register (2026-09-17): every row was **BLOCKED_BY_MISSING_SPEC** against K1 alone. The 2026-10-27 status table after this register records which items the live market pipeline addressed. Do not resolve order-related rows through trial-and-error against live orders.
 
 | ID | Missing/contradictory evidence | Affected integration | Evidence required to unblock |
 | --- | --- | --- | --- |
@@ -150,6 +152,25 @@ Every row is **BLOCKED_BY_MISSING_SPEC** until the stated repository evidence is
 | K-08 | `ka10004!G28` labels a book time as YYYYMMDD while WS `0D!G41` uses HHmmss; quote lacks a verified exchange timestamp; date rollover/session/timezone and chart completion/adjustment semantics need clarification. | Freshness, chart finality, snapshot/stream alignment and order evidence age | Exact time formats/timezone/calendar, current-day candle semantics (including daily `cur_prc`), adjustment continuity and reliable ordering/quality rules. Unknown source time stays unknown. |
 | K-09 | State names and quantities exist but full acceptance/fill/cancel semantics, identity uniqueness, event ordering/deduplication, retention/visibility and lost-response reconciliation are incomplete. No broker idempotency contract is supplied. | M8 order-state tracking/recovery and safe live activation | Authoritative order lifecycle definitions, fill identity/cumulative rules, complete order lookup/history pagination coverage, date/account scope and reconciliation procedure when no `ord_no` was received. Retain UNKNOWN when unresolved; no invented idempotency field. |
 | K-10 | Rate-limit errors exist without numeric quota, backoff, subscription-cap or supported simulation coverage specification. | Operational polling, reconnect/subscription planning and integration tests | API/global/group quotas, concurrent connection/subscription limits and environment-specific feature support. Do not invent requests-per-second values. |
+
+### Status after the live market pipeline (2026-10-27)
+
+`ADDRESSED_OFFLINE` means implemented from kiwoom-cli documentation/implementation and covered by tests, with **live verification pending: valid app key required**. No recorded live response or live-connection date exists.
+
+| ID | Status | Evidence (offline) | Remaining |
+| --- | --- | --- | --- |
+| K-01 | ADDRESSED_OFFLINE | `gateway/tests/test_auth.py`: au10001 credential grant, `expires_dt` parsed as KST, renewal before expiry | Live token issuance fails with 8001 (app key/secret validation failed); token-account binding unverified |
+| K-02 | ADDRESSED_OFFLINE | `gateway/tests/test_realtime.py`: LOGIN, REG with nested `data` item/type lists, PING echo, LOGIN 8005 token invalidation, reconnect backoff | No live handshake observed; subscription limits unknown |
+| K-03 | PARTIAL, offline | `gateway/tests/test_values.py`: signed price/quantity parsing for market data | Order inputs derived from signed fields move to the follow-up plan |
+| K-04 | PARTIAL, offline | `gateway/tests/test_rest.py`: `return_code` handling, rate-limit response not retried | Order receipt and failure classification move to the follow-up plan |
+| K-05 | OPEN, follow-up plan | none | Order-related |
+| K-06 | OPEN, follow-up plan | none | Order-related |
+| K-07 | OPEN, follow-up plan | none | Order-related |
+| K-08 | ADDRESSED_OFFLINE | `gateway/tests/test_values.py` (KST timestamps, HHmmss on the current KST date), `test_session.py` (KRX 09:00-15:30; NXT 08:00-08:50 and 15:30-20:00 KST), `test_realtime.py`, fixture `gateway/tests/fixtures/ka10080_005930.json` (from the API documentation example, not a recorded response) | Date rollover, holidays and chart completion/adjustment unverified live |
+| K-09 | OPEN, follow-up plan | none | Order-related |
+| K-10 | PARTIAL, offline | Rate-limit responses are not retried; reconnect backoff tested | Numeric quotas and subscription caps still unknown |
+
+Order-related items (K-05, K-06, K-07, K-09 and the order parts of K-03/K-04) move to a follow-up plan. `/v1/orders` still returns 404.
 
 ## Unblocking workflow
 

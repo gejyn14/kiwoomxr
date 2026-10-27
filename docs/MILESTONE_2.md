@@ -1,8 +1,21 @@
 # Milestone 2 — financial data and spatial UI
 
-Status: **IN_PROGRESS / LIVE_INTEGRATION_BLOCKED_BY_MISSING_SPEC**, 2026-09-18.
+Status: **IN_PROGRESS / MARKET_PIPELINE_IMPLEMENTED_LIVE_VERIFICATION_PENDING**, updated 2026-10-27.
 
-Source policy confirmed 2026-09-20; this does not update the date of the software verification below.
+On 2026-10-27 the user decided to use the Kiwoom production domain and to accept kiwoom-cli documentation and implementation as evidence, retiring the former `BLOCKED_BY_MISSING_SPEC` gate for market data. Design: [investment-jarvis design](superpowers/specs/2026-10-27-investment-jarvis-design.md); plan: [live market pipeline](superpowers/plans/2026-10-27-live-market-pipeline.md). Sections dated 2026-09-18 below are the earlier shell-era record and are kept as history; where they conflict with the stream architecture section, the latter governs.
+
+## Live market pipeline (2026-10-27)
+
+- Gateway: Settings and TokenProvider (au10001, expiry in KST), `KiwoomRest` 1-minute candles (ka10080), `KiwoomRealtime` WebSocket (LOGIN, REG, 0B trade, 0D book; KRX `005930` and NXT `005930_NX`), market session rules (KRX 09:00-15:30; NXT 08:00-08:50 and 15:30-20:00 KST), `MarketHub`, and a `/v1/stream` WebSocket with pairing token and heartbeat. No order endpoint; `/v1/orders` still returns 404.
+- Unity: `GatewayStreamContract`, `GatewayStream`, heartbeat-based aging in `MarketDataSession`; `HubMarket` replaced `SpecificationGatedMarket`. HTTP polling and the 30-second cache-age display policy described below are superseded. Client rules are in [QUEST_SETUP.md](QUEST_SETUP.md): heartbeat every 5 s; no heartbeat for 15 s turns LIVE/SNAPSHOT values STALE (`GATEWAY_HEARTBEAT_LOST`); socket loss shows DISCONNECTED; reconnect backoff 1/2/4/8 s.
+
+| Evidence | Result | Limit |
+|---|---|---|
+| Gateway pytest | 108 passed | Offline; mocked transports |
+| .NET domain tests | 93 passed | Does not exercise Unity |
+| `gateway/tests/fixtures/ka10080_005930.json` | Used by `test_rest.py` | From the API documentation example, not a recorded live response |
+| Live Kiwoom (au10001, ka10080, 0B/0D) | NOT VERIFIED | Live verification pending: valid app key required; au10001 currently returns 8001 (app key/secret validation failed) |
+| Unity EditMode, editor visual, on-device | NOT RUN | Unity license pending; headset arrives 2026-10-29 |
 
 The user requested live data, a substantially improved spatial UI, continued work through M9, and use of Meta's official design guidance. The user confirmed that no physical Quest 3 is available. Continue software/simulator work; do not treat simulator success as device acceptance.
 
@@ -11,8 +24,8 @@ The user requested live data, a substantially improved spatial UI, continued wor
 - A rounded spatial Focus surface with clearer price hierarchy, Korean text, source/freshness labels, structured candlesticks and volume, nearby controls and explicit selected/hover borders.
 - Typed, immutable quote/candle/book observations with separate status, origin, source/receipt time and nullable values.
 - An explicit preview capability. Components render the same observation contracts in preview and gateway modes; gateway failure does not activate preview.
-- A gateway client boundary with a correlation ID propagated from the triggering Action, selection generation checks, bounded request timeout, no redirects, no automatic retries and a visible 30-second cache-age policy. This is a client display limit, not a claim about market freshness or exchange quotas.
-- A FastAPI modular monolith and strict Pydantic contracts. Current Kiwoom capabilities deterministically return null/unavailable with the documented specification blocker. Broker keys are neither read nor sent while blocked.
+- (Superseded 2026-10-27 by the stream client above.) A gateway client boundary with a correlation ID propagated from the triggering Action, selection generation checks, bounded request timeout, no redirects, no automatic retries and a visible 30-second cache-age policy. This is a client display limit, not a claim about market freshness or exchange quotas.
+- A FastAPI modular monolith and strict Pydantic contracts. (As of 2026-09-18 the Kiwoom capabilities returned null/unavailable with the specification blocker and broker keys were not read; superseded by the pipeline above.)
 - Gateway process readiness separated from broker connectivity, no order endpoints, redacted request-validation errors and localhost host restrictions.
 - Decimal strings and integer-quantity strings preserve values across Python/C# without binary floating-point conversions. Supported wire precision is an application constraint, not an exchange rule.
 - Explicit token decoding through Unity’s official Newtonsoft package. Null, missing, duplicate and extra fields are distinguished; responses must match the requested instrument/correlation and provider. Candle adjustment/completion metadata is retained. Quote and chart status are presented independently.
@@ -35,9 +48,9 @@ The final ARM64/IL2CPP Android build and APK inspection passed. Package permissi
 
 ## Live integration gate
 
-The repository workbook remains the only authorized Kiwoom source. Its required bearer header for initial token issuance conflicts with credential bootstrap, and its WS lifecycle and several numeric/time semantics are incomplete. See [K-01–K-10](KIWOOM_API_MAPPING.md#blocking-specification-register).
+History: until 2026-10-26 the repository workbook was the only authorized source and the integration was `BLOCKED_BY_MISSING_SPEC` (token bearer-header conflict, undefined WS lifecycle, incomplete numeric/time semantics). The 2026-10-27 decision retired that gate for market data. See the per-item status in [K-01–K-10](KIWOOM_API_MAPPING.md#blocking-specification-register).
 
-The user confirmed on 2026-09-20 that only the current repository specification may be used. External Kiwoom documentation is not an authorized supplement. K1's SHA-256 still matches the recorded source, and no additional specification was found. The source-scope question is resolved; the integration remains `BLOCKED_BY_MISSING_SPEC`. Do not guess auth headers, try undocumented requests, normalize ambiguous signed prices with `abs()`, or label a local response as live market data. An available environment key is not a substitute for a verified wire specification.
+What remains gated: nothing has been run against the live Kiwoom API, so every K-item addressed for market data is verified offline only. Do not label a local or fixture response as live market data, and do not normalize ambiguous signed prices with `abs()`. Order paths are out of scope here and their K-items move to a follow-up plan.
 
 The [roadmap](ROADMAP.md) retains M3–M9 exit gates, including deterministic order safeguards and deliberate physical confirmation. The present gateway has no order submission capability.
 
