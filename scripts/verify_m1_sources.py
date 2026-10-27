@@ -33,7 +33,7 @@ for path in list((source / "Runtime").rglob("*.cs")) + list((source / "Domain").
     text = path.read_text()
     if re.search(r"DllImport|CONFIRM_ORDER|OrderExecutor|api\.kiwoom\.com|/oauth2/token|\b(?:ka|kt|au)\d{5}\b", text):
         errors.append(f"Financial boundary violation: {path.name}")
-    if re.search(r"UnityWebRequest|HttpClient|ClientWebSocket", text) and path.name != "MarketDataSession.cs":
+    if re.search(r"UnityWebRequest|HttpClient|ClientWebSocket", text) and path.name != "GatewayStream.cs":
         errors.append(f"Networking outside gateway interface: {path.name}")
 # Check filenames only. Never read, print, or copy private credential files.
 private_files = sum(1 for path in (QUEST / "Assets").rglob("*") if path.is_file() and

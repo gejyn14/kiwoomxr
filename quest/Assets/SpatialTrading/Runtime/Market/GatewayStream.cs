@@ -77,7 +77,8 @@ namespace SpatialTrading.Market
         {
             _generation++; // late messages from the cancelled socket are discarded in Update
             if (_cancel == null) return;
-            _cancel.Cancel();
+            try { _cancel.Cancel(); }
+            catch (ObjectDisposedException) { } // the receive task already ended and released it
             _cancel = null;
         }
 
@@ -137,8 +138,9 @@ namespace SpatialTrading.Market
                 catch (Exception failure) { error = failure.GetType().Name; }
                 if (cancel.IsCancellationRequested) return;
                 _inbox.Enqueue(new Inbound { Generation = generation, Reason = reason, Error = error });
-                // A session that delivered data resets the backoff; repeated refusals (including 4401) do not.
-                if (delivered) attempt = 0;
+                // Only a session that delivered data and then dropped resets the backoff; refusals
+                // (including 4401) and protocol violations such as oversized messages keep backing off.
+                if (delivered && reason == Unreachable && error == null) attempt = 0;
                 var delay = TimeSpan.FromSeconds(Math.Min(8, 1 << Math.Min(attempt, 3)));
                 attempt++;
                 try { await Task.Delay(delay, cancel).ConfigureAwait(false); }

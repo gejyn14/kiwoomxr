@@ -265,7 +265,17 @@ namespace SpatialTrading.Editor
         }
 
         [MenuItem("Spatial Trading/7. Connect to local gateway")]
-        public static void UseGateway() => SetPreview(false);
+        public static void UseGateway()
+        {
+            if (!MarketDataSession.AllowedGateway(EditorPrefs.GetString(MarketDataSession.EditorUrlPref, string.Empty)) ||
+                EditorPrefs.GetString(MarketDataSession.EditorTokenPref, string.Empty).Length == 0)
+                Debug.LogWarning("[Gateway] Set the stream address and pairing token first (Spatial Trading → 9). " +
+                    "Until then the shell shows GATEWAY_CONFIGURATION_REQUIRED.");
+            SetPreview(false);
+        }
+        // Stored per user in EditorPrefs, outside the project and every build.
+        [MenuItem("Spatial Trading/9. Set gateway stream address and pairing token")]
+        public static void ConfigureGateway() => GatewaySettingsWindow.Open();
         [MenuItem("Spatial Trading/8. Preview with synthetic data")]
         public static void UsePreview() => SetPreview(true);
         private static void SetPreview(bool preview)

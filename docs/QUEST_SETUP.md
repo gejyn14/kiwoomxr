@@ -101,6 +101,43 @@ adb shell monkey -p com.kiwoomxr.spatialshell -c android.intent.category.LAUNCHE
 
 If more than one device is connected, use `adb -s` with the intended local device ID. Keep device IDs out of published evidence. Follow the [acceptance checklist](MILESTONE_1.md#headset-acceptance) in a comfortable seated setup. APK installation alone is not acceptance.
 
+## Live market stream (gateway)
+
+In gateway mode the shell no longer polls HTTP. `MarketDataSession` opens one WebSocket to the gateway's `/v1/stream`, subscribes the selected (and compared) codes, and renders the latest pushed observation per capability. Start the gateway first (`gateway/README.md`); its pairing token is `GATEWAY_PAIRING_TOKEN`.
+
+**Address policy (same in the Editor and on device).** `wss://` is accepted for any host. Plain `ws://` is accepted only for loopback (`127.0.0.1`, `localhost`, `[::1]`) or a private IPv4 LAN address (10/8, 172.16/12, 192.168/16). User info, query strings and fragments are rejected. `http(s)` addresses are no longer used for market data. An invalid or missing setting shows `GATEWAY_CONFIGURATION_REQUIRED`; it never falls back to preview data.
+
+**Editor.** Use **Spatial Trading → 9. Set gateway stream address and pairing token** (for example `ws://127.0.0.1:8471/v1/stream`), then **7. Connect to local gateway**. Both values live only in this user's `EditorPrefs`, outside the project; the scene and the APK carry neither.
+
+**Quest (development).** The APK contains no address or token. After the app has been launched once (so its data folder exists), push a settings file and restart the app:
+
+```bash
+cat > /tmp/gateway.json <<'JSON'
+{"url": "ws://192.168.0.12:8471/v1/stream", "token": "<GATEWAY_PAIRING_TOKEN>"}
+JSON
+adb push /tmp/gateway.json /sdcard/Android/data/com.kiwoomxr.spatialshell/files/gateway.json
+rm /tmp/gateway.json
+adb shell am force-stop com.kiwoomxr.spatialshell
+adb shell monkey -p com.kiwoomxr.spatialshell -c android.intent.category.LAUNCHER 1
+```
+
+The file must contain exactly `url` and `token`; anything else is rejected. Use the Mac's LAN IP and add that IP to the gateway's `GATEWAY_ALLOWED_HOSTS`. Remove the device copy with `adb shell rm /sdcard/Android/data/com.kiwoomxr.spatialshell/files/gateway.json`. Never put `gateway.json` under `quest/Assets`: `BuildCredentialGuard` refuses the build if one exists there, and after every Android build it scans the APK for the token stored in `EditorPrefs` (UTF-8 and UTF-16) and for any `"token": "<32+ characters>"` text. If it finds either, it deletes the APK and fails the build, naming only the archive entry.
+
+**Status rules.** The gateway sends a heartbeat every 5 s.
+
+- No heartbeat for more than 15 s: values received as LIVE/SNAPSHOT are shown as STALE (`GATEWAY_HEARTBEAT_LOST`). Tick or source time never makes a value stale.
+- Heartbeat `broker_connected=false`: values are shown as DISCONNECTED with the heartbeat's reason.
+- Gateway socket closed or unreachable: everything streamed is shown as DISCONNECTED (`GATEWAY_UNREACHABLE`; a rejected pairing token is `GATEWAY_UNAUTHORIZED`). The last values stay visible. Reconnects back off 1, 2, 4, then 8 s; a session that delivered data and then dropped starts again at 1 s. The first heartbeat on the new connection clears the status.
+- A single message over 2 MiB closes the connection (`GATEWAY_MESSAGE_TOO_LARGE`). Malformed messages are dropped one at a time with a warning that omits their contents.
+- The chart's source label shows the venue of the latest observation, for example `KIWOOM · NXT  /  LIVE`.
+
+### Deferred manual checks
+
+These steps need a working Unity license and a valid Kiwoom key (Editor check) or the headset (device check). They have not been run yet.
+
+1. **Editor live check.** Start the gateway with a valid key. Open `FocusShell.unity`, set the stream address with menu 9, choose menu 7 and enter Play Mode (or use the Meta XR Simulator, menu 5). On 삼성전자, confirm LIVE, the `KRX`/`NXT` label and a moving order book. Save a simulator capture as `docs/images/live-market-<date>.png`. Stop the gateway: DISCONNECTED must appear within 8 s and the last values must stay visible. Restart it: the shell must recover without input.
+2. **Device check.** Put the Quest and the Mac on the same hotspot/LAN. Add the Mac's IP to `GATEWAY_ALLOWED_HOSTS`, sideload the APK, push `gateway.json` as above and confirm LIVE on Quest. Record the result and relevant `adb logcat -s Unity` lines in `docs/MILESTONE_2.md`, with the token and device IDs removed.
+
 ## Input and layout
 
 - Direct poke/touch on the reachable control dock.
