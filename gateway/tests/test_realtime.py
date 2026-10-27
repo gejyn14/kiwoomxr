@@ -131,7 +131,7 @@ class FakeTokens:
         return True
 
 
-def make(scripts, stop_after=None):
+def make(scripts, stop_after=None, **kw):
     settings = Settings("a", "s", "p" * 32, ("005930",), ("127.0.0.1",))
     connect = FakeConnect(scripts)
     tokens = FakeTokens()
@@ -144,7 +144,7 @@ def make(scripts, stop_after=None):
 
     rt = KiwoomRealtime(
         settings, tokens, events.append, lambda ok, reason: states.append((ok, reason)),
-        connect=connect, sleep=sleep, clock=lambda: datetime(2026, 10, 27, 15, 40, tzinfo=KST),
+        connect=connect, sleep=sleep, clock=lambda: datetime(2026, 10, 27, 15, 40, tzinfo=KST), **kw,
     )
     return rt, connect, tokens, events, states, sleeps
 
@@ -211,3 +211,77 @@ async def test_token_failure_backs_off_without_connecting():
     assert connect.sockets == []
     assert states == [(False, "KIWOOM_AUTH")] * 2
     assert sleeps == [1, 2]
+
+
+class HangWS(FakeWS):
+    async def recv(self):
+        if self.script:
+            return await super().recv()
+        await asyncio.Event().wait()
+
+
+def hang_connect(connect):
+    original = connect.__call__
+
+    def patched(url, **kwargs):
+        cm = original(url, **kwargs)
+        connect.sockets[-1].__class__ = HangWS
+        return cm
+
+    return patched
+
+
+async def test_silent_server_times_out_at_login_reg_and_idle():
+    ok_login = {"trnm": "LOGIN", "return_code": 0}
+    ok_reg = {"trnm": "REG", "return_code": 0}
+    rt, connect, tokens, events, states, sleeps = make(
+        [[], [ok_login], [ok_login, ok_reg]], stop_after=3, ack_timeout=0.01, idle_timeout=0.01
+    )
+    rt._connect = hang_connect(connect)
+    await run_until_cancel(rt)
+    assert states == [(False, "KIWOOM_WS_CLOSED"), (False, "KIWOOM_WS_CLOSED"), (True, None), (False, "KIWOOM_WS_CLOSED")]
+    assert sleeps == [1, 2, 1]
+
+
+async def test_callback_exceptions_do_not_kill_the_loop():
+    script = [{"trnm": "LOGIN", "return_code": 0}, {"trnm": "REG", "return_code": 0}, REAL, REAL]
+    rt, connect, tokens, events, states, sleeps = make([script, script], stop_after=2)
+    calls = []
+
+    def bad_event(e):
+        calls.append(e)
+        raise RuntimeError("boom " + TOKEN)
+
+    def bad_state(ok, reason):
+        states.append((ok, reason))
+        raise RuntimeError("boom")
+
+    rt._on_event, rt._on_state = bad_event, bad_state
+    await run_until_cancel(rt)
+    assert len(calls) == 4
+    assert states == [(True, None), (False, "KIWOOM_WS_CLOSED")] * 2
+
+
+async def test_handshake_failure_backs_off_as_ws_closed():
+    from websockets.exceptions import InvalidStatus
+
+    rt, connect, tokens, events, states, sleeps = make([], stop_after=2)
+
+    def refuse(url, **kwargs):
+        raise InvalidStatus(None)
+
+    rt._connect = refuse
+    await run_until_cancel(rt)
+    assert states == [(False, "KIWOOM_WS_CLOSED")] * 2
+    assert sleeps == [1, 2]
+
+
+async def test_any_token_error_is_auth_and_never_escapes():
+    rt, connect, tokens, events, states, sleeps = make([], stop_after=2)
+
+    async def boom():
+        raise RuntimeError("transport " + TOKEN)
+
+    tokens.token = boom
+    await run_until_cancel(rt)
+    assert states == [(False, "KIWOOM_AUTH")] * 2

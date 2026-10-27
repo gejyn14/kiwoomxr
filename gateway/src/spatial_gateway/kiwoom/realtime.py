@@ -5,6 +5,7 @@ The token is only ever sent in the LOGIN frame; it never reaches logs, state rea
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -12,16 +13,19 @@ from decimal import Decimal
 from typing import Any
 
 import websockets
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import WebSocketException
 
 from spatial_gateway.kiwoom import values as v
-from spatial_gateway.kiwoom.auth import KiwoomAuthError
 from spatial_gateway.market.session import Market, realtime_item
 from spatial_gateway.settings import Settings
 
 _BACKOFF = (1, 2, 4, 8, 15)
 _NX = "_NX"
 _AUTH_CODE = 8005
+ACK_TIMEOUT = 10.0
+IDLE_TIMEOUT = 60.0
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -126,7 +130,11 @@ class KiwoomRealtime:
         connect: Callable[..., Any] = websockets.connect,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], datetime] = lambda: datetime.now(v.KST),
+        ack_timeout: float = ACK_TIMEOUT,
+        idle_timeout: float = IDLE_TIMEOUT,
     ) -> None:
+        self._ack_timeout = ack_timeout
+        self._idle_timeout = idle_timeout
         self._settings = settings
         self._tokens = tokens
         self._on_event = on_event
@@ -143,17 +151,27 @@ class KiwoomRealtime:
             items += [realtime_item(code, Market.KRX), realtime_item(code, Market.NXT)]
         return {"trnm": "REG", "grp_no": "1", "refresh": "1", "data": [{"item": items, "type": ["0B", "0D"]}]}
 
+    def _state(self, ok: bool, reason: str | None) -> None:
+        try:
+            self._on_state(ok, reason)
+        except Exception as error:
+            _log.warning("on_state callback failed: %s", type(error).__name__)
+
     async def run(self) -> None:
         while True:
             try:
-                await self._session()
-            except _AuthFailed:
-                self._on_state(False, "KIWOOM_AUTH")
-            except (_Dropped, ConnectionClosed, OSError, KiwoomAuthError) as error:
-                reason = "KIWOOM_AUTH" if isinstance(error, KiwoomAuthError) else "KIWOOM_WS_CLOSED"
-                self._on_state(False, reason)
+                token = await self._tokens.token()
+            except Exception as error:
+                _log.warning("token fetch failed: %s", type(error).__name__)
+                self._state(False, "KIWOOM_AUTH")
             else:
-                self._on_state(False, "KIWOOM_WS_CLOSED")
+                try:
+                    await self._session(token)
+                except _AuthFailed:
+                    self._state(False, "KIWOOM_AUTH")
+                except (_Dropped, WebSocketException, OSError, TimeoutError) as error:
+                    _log.warning("realtime connection ended: %s", type(error).__name__)
+                    self._state(False, "KIWOOM_WS_CLOSED")
             delay = _BACKOFF[min(self._attempt, len(_BACKOFF) - 1)]
             self._attempt += 1
             await self._sleep(delay)
@@ -171,27 +189,30 @@ class KiwoomRealtime:
             elif kind == "REAL":
                 buffer.append(frame)
 
-    async def _session(self) -> None:
-        token = await self._tokens.token()
+    async def _session(self, token: str) -> None:
         async with self._connect(self._settings.ws_url, ping_interval=None, ping_timeout=None) as ws:
             buffer: list[dict] = []
             await ws.send(json.dumps({"trnm": "LOGIN", "token": token}))
-            ack = await self._recv_ack(ws, "LOGIN", buffer)
+            async with asyncio.timeout(self._ack_timeout):
+                ack = await self._recv_ack(ws, "LOGIN", buffer)
             if ack.get("return_code") != 0:
                 code = ack.get("return_code")
                 if code == _AUTH_CODE or str(_AUTH_CODE) in str(ack.get("return_msg", "")):
                     await self._tokens.invalidate()
                 raise _AuthFailed
             await ws.send(json.dumps(self.register_message(self._settings.watch_codes)))
-            ack = await self._recv_ack(ws, "REG", buffer)
+            async with asyncio.timeout(self._ack_timeout):
+                ack = await self._recv_ack(ws, "REG", buffer)
             if ack.get("return_code") != 0:
                 raise _Dropped
             self._attempt = 0
-            self._on_state(True, None)
+            self._state(True, None)
             for frame in buffer:
                 self._emit(frame)
             while True:
-                frame = _loads(await ws.recv())
+                async with asyncio.timeout(self._idle_timeout):
+                    raw = await ws.recv()
+                frame = _loads(raw)
                 if frame is None:
                     continue
                 if frame.get("trnm") == "PING":
@@ -201,4 +222,7 @@ class KiwoomRealtime:
 
     def _emit(self, frame: dict) -> None:
         for event in parse_real_frame(frame, self._clock().astimezone(v.KST).date()):
-            self._on_event(event)
+            try:
+                self._on_event(event)
+            except Exception as error:
+                _log.warning("on_event callback failed: %s", type(error).__name__)
