@@ -186,11 +186,10 @@ class KiwoomRealtime:
         items: list[str] = []
         for code in codes:
             items += [realtime_item(code, Market.KRX), realtime_item(code, Market.NXT)]
-        data = [
-            {"item": items, "type": ["0B", "0D"]},
-            {"item": list(index_codes), "type": ["0J"]},
-            {"item": [""], "type": ["04"]},
-        ]
+        data = [{"item": items, "type": ["0B", "0D"]}]
+        if index_codes:  # an empty item group may be rejected, and a failed REG drops the session
+            data.append({"item": list(index_codes), "type": ["0J"]})
+        data.append({"item": [""], "type": ["04"]})
         return {"trnm": "REG", "grp_no": "1", "refresh": "1", "data": data}
 
     def _state(self, ok: bool, reason: str | None) -> None:

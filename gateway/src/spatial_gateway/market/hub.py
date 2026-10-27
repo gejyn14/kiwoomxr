@@ -10,17 +10,22 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from spatial_gateway.kiwoom.realtime import AccountEvent, Book, IndexTick, Trade
-from spatial_gateway.kiwoom.rest import MinuteBar
+from spatial_gateway.kiwoom.rest import Bar, MinuteBar
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.models import (
     BookLevel, Candle, CandleSeries, DataState, Observation, OrderBook, Origin, Quote,
 )
 
-from .charts import ChartStore
+from .charts import ChartStore, Interval
 from .observe import observe
 from .session import Market, active_market
+
+if TYPE_CHECKING:  # services import the hub's packages; avoid a runtime cycle
+    from spatial_gateway.account import AccountService
+    from spatial_gateway.news import NewsService
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +108,9 @@ class MarketHub:
         self._subscribers: list[asyncio.Queue[str]] = []
         self._watched = frozenset(watch_codes)
         self.charts = ChartStore(clock, watch_codes=watch_codes, index_codes=index_codes)
+        # Attached by the app; they notify subscribers with the "ACCOUNT" / "NEWS" subject keys.
+        self.account: "AccountService | None" = None
+        self.news: "NewsService | None" = None
         self._connected = False
         self._reason: str | None = "KIWOOM_CONNECTING"
 
@@ -160,11 +168,17 @@ class MarketHub:
         self._states[(code, market)] = state
         self._notify(code)
 
+    def seed_chart(self, code: str, market: Market, interval: Interval, bars: Sequence[Bar]) -> None:
+        self.charts.seed(code, market, interval, bars)
+        self._notify(code)
+
     def apply(self, event: Trade | Book | IndexTick | AccountEvent) -> None:
         try:
             if isinstance(event, AccountEvent):
                 if self._on_account is not None:
                     self._on_account()
+                elif self.account is not None:
+                    self.account.balance_changed()
                 return
             if isinstance(event, IndexTick):
                 if self.charts.apply_index(event.code, event.price, event.change, event.change_percent, event.at):
@@ -240,6 +254,12 @@ class MarketHub:
         """Market whose state for `code` was received most recently, i.e. the last session that traded."""
         received = [(s.last_received, m) for (c, m), s in self._states.items() if c == code and s.last_received]
         return max(received)[1] if received else None
+
+    def last_price(self, code: str) -> Decimal | None:
+        """Last trade price in the market `observations` currently shows for `code`."""
+        market = active_market(self._clock()) or self._latest_market(code)
+        state = self._states.get((code, market)) if market is not None else None
+        return state.quote.last_price if state is not None and state.quote is not None else None
 
     def observations(self, code: str, correlation_id: str) -> HubSnapshot:
         now = self._clock()

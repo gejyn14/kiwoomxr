@@ -79,8 +79,13 @@ def test_register_message_subscribes_krx_and_nxt_items():
     assert KiwoomRealtime.register_message(["005930"]) == {
         "trnm": "REG", "grp_no": "1", "refresh": "1",
         "data": [{"item": ["005930", "005930_NX"], "type": ["0B", "0D"]},
-                 {"item": [], "type": ["0J"]}, {"item": [""], "type": ["04"]}],
+                 {"item": [""], "type": ["04"]}],
     }
+
+
+def test_register_message_omits_an_empty_index_group():
+    data = KiwoomRealtime.register_message(["005930"], index_codes=())["data"]
+    assert all("0J" not in group["type"] for group in data)
 
 
 class FakeWS:

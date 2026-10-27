@@ -36,7 +36,7 @@ def build(api_responses):
     settings = make_settings()
     clock = Clock(datetime(2026, 10, 27, 12, 0, tzinfo=KST))
     tokens = TokenProvider(client, settings, clock)
-    return KiwoomRest(client, tokens, settings), api_requests, token_calls
+    return KiwoomRest(client, tokens, settings, min_gap=0), api_requests, token_calls
 
 
 async def test_minute_candles_parse_ascending_absolute_prices():
@@ -142,6 +142,16 @@ async def test_index_daily_scales_to_index_points():
     assert all(b.close.as_tuple().exponent >= -2 for b in bars)
 
 
+async def test_index_rows_already_in_points_are_not_divided_again():
+    data = _fx("ka20006_001.json")
+    data["inds_dt_pole_qry"] = [{"cur_prc": "5638.34", "trde_qty": "196172", "dt": "20261027",
+                                 "open_pric": "5658.65", "high_pric": "5737.61", "low_pric": "5612.92"}]
+    rest, _, _ = build([data])
+    (bar,) = await rest.index_daily("001", date(2026, 10, 28))
+    assert (bar.open, bar.high, bar.low, bar.close) == (
+        Decimal("5658.65"), Decimal("5737.61"), Decimal("5612.92"), Decimal("5638.34"))
+
+
 async def test_index_hour_parses_fixture():
     rest, requests, _ = build([_fx("ka20005_60_001.json")])
     bars = await rest.index_hour("001")
@@ -159,3 +169,28 @@ async def test_chart_rows_with_missing_or_inverted_prices_are_dropped():
     rest, _, _ = build([data])
     bars = await rest.daily_candles("005930", date(2026, 10, 28))
     assert len(bars) == 3
+
+
+async def test_concurrent_requests_share_one_rest_spacing():
+    import asyncio
+    import time
+    stamps = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth2/token":
+            return httpx.Response(200, json={"token": "T", "expires_dt": "20261027235959", "return_code": 0})
+        stamps.append(time.monotonic())
+        return httpx.Response(200, json={"return_code": 0})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    settings = make_settings()
+    tokens = TokenProvider(client, settings, Clock(datetime(2026, 10, 27, 12, 0, tzinfo=KST)))
+    rest = KiwoomRest(client, tokens, settings, min_gap=0.1)
+    await asyncio.gather(*(rest.request("ka10001", "/api/dostk/stkinfo", {}) for _ in range(3)))
+    assert len(stamps) == 3
+    assert all(b - a >= 0.095 for a, b in zip(stamps, stamps[1:]))
+
+
+def test_default_rest_spacing_is_a_quarter_second():
+    import inspect
+    assert inspect.signature(KiwoomRest).parameters["min_gap"].default == 0.25

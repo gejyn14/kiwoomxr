@@ -16,19 +16,25 @@ from uuid import UUID
 from fastapi import WebSocket, WebSocketDisconnect
 
 from .kiwoom.values import KST
-from .market.hub import MarketHub
+from .market.hub import HubSnapshot, MarketHub
+from .market.session import Market
+from .models import ACCOUNT, NEWS, Observation
 
 log = logging.getLogger(__name__)
 
 CLOSE_UNAUTHORIZED = 4401
-_CODE = re.compile(r"^[0-9]{6}$")
-_CAPABILITIES = ("quote", "candles", "orderbook")
+_CODE = re.compile(r"^([0-9]{6}|[0-9]{3})$")  # stock or index
+_STOCK_CAPABILITIES = ("quote", "candles", "orderbook", "candles_1d", "candles_4h")
+_INDEX_CAPABILITIES = ("quote", "candles_1d", "candles_4h")  # an index has no order book
+_CHART_INTERVALS = {"candles_1d": "1D", "candles_4h": "4H"}
+_SUBJECT_CAPABILITY = {ACCOUNT: "balance", NEWS: "news"}  # one per connection, not tied to codes
 
 
 @dataclass(frozen=True)
 class StreamTiming:
     quote_interval: float = 0.1     # per (code, capability) coalescing window
-    candles_interval: float = 0.5   # candles at most 2 per second
+    candles_interval: float = 0.5   # candles (1m, 1D, 4H) at most 2 per second
+    subject_interval: float = 1.0   # balance and news at most once per second
     heartbeat_interval: float = 5.0
     handshake_timeout: float = 10.0
 
@@ -102,12 +108,57 @@ async def _drain_client(websocket: WebSocket) -> None:
         await websocket.receive_text()
 
 
+def _is_index(code: str) -> bool:
+    return len(code) == 3
+
+
+def _subjects(hub: MarketHub) -> list[str]:
+    return [subject for subject, service in ((ACCOUNT, hub.account), (NEWS, hub.news)) if service is not None]
+
+
+def _keys(hub: MarketHub, codes: list[str]) -> set[tuple[str, str]]:
+    keys = {(c, cap) for c in codes for cap in (_INDEX_CAPABILITIES if _is_index(c) else _STOCK_CAPABILITIES)}
+    keys.update((subject, _SUBJECT_CAPABILITY[subject]) for subject in _subjects(hub))
+    return keys
+
+
+def _changed_keys(hub: MarketHub, codes: list[str], changed: str) -> set[tuple[str, str]]:
+    if changed in _SUBJECT_CAPABILITY:
+        return {(changed, _SUBJECT_CAPABILITY[changed])} if changed in _subjects(hub) else set()
+    return _keys(hub, [changed]) if changed in codes else set()
+
+
+def _interval(cap: str, timing: StreamTiming) -> float:
+    if cap == "candles" or cap in _CHART_INTERVALS:
+        return timing.candles_interval
+    if cap in ("balance", "news"):
+        return timing.subject_interval
+    return timing.quote_interval
+
+
+def _observe(hub: MarketHub, code: str, cap: str, cid: str,
+             snapshots: dict[str, HubSnapshot]) -> tuple[Market | None, Observation]:
+    connected, reason = hub.connection
+    if cap == "balance":
+        return None, hub.account.observation(cid)
+    if cap == "news":
+        return None, hub.news.observation(cid)
+    if cap in _CHART_INTERVALS:
+        return hub.charts.observation(code, _CHART_INTERVALS[cap], cid, connected, reason)
+    if _is_index(code):  # quote; indices are KRX only
+        return Market.KRX, hub.charts.index_quote(code, cid, connected, reason)
+    if code not in snapshots:
+        snapshots[code] = hub.observations(code, cid)
+    snapshot = snapshots[code]
+    return snapshot.market, getattr(snapshot, cap)
+
+
 async def _push(websocket: WebSocket, hub: MarketHub, queue: asyncio.Queue[str], codes: list[str],
                 cid: str, timing: StreamTiming, clock: Callable[[], datetime]) -> None:
     loop = asyncio.get_running_loop()
     last_sent: dict[tuple[str, str], str] = {}
     last_at: dict[tuple[str, str], float] = {}
-    pending: set[tuple[str, str]] = {(c, cap) for c in codes for cap in _CAPABILITIES}
+    pending: set[tuple[str, str]] = _keys(hub, codes)
     connection = hub.connection
     next_beat = loop.time()
     tick = min(timing.quote_interval, timing.heartbeat_interval)
@@ -123,36 +174,31 @@ async def _push(websocket: WebSocket, hub: MarketHub, queue: asyncio.Queue[str],
         if now >= next_beat:
             await heartbeat()
             next_beat = now + timing.heartbeat_interval
-            pending.update((c, cap) for c in codes for cap in _CAPABILITIES)  # re-check session/state drift
+            pending.update(_keys(hub, codes))  # re-check session/state drift
         if hub.connection != connection:
             connection = hub.connection
             await heartbeat()
-            pending.update((c, cap) for c in codes for cap in _CAPABILITIES)
-        for code in sorted({c for c, _ in pending}):
-            snapshot = hub.observations(code, cid)
-            for cap in _CAPABILITIES:
-                key = (code, cap)
-                if key not in pending:
-                    continue
-                interval = timing.candles_interval if cap == "candles" else timing.quote_interval
-                if now - last_at.get(key, float("-inf")) < interval:
-                    continue
-                pending.discard(key)
-                observation = getattr(snapshot, cap)
-                body = observation.model_dump_json()
-                if last_sent.get(key) == body:
-                    continue
-                last_sent[key] = body
-                last_at[key] = now
-                market = snapshot.market.value if snapshot.market is not None else None
-                await websocket.send_text(json.dumps({
-                    "type": "observation", "capability": cap, "market": market,
-                    "observation": json.loads(body)}))
+            pending.update(_keys(hub, codes))
+        snapshots: dict[str, HubSnapshot] = {}
+        for key in sorted(pending):
+            code, cap = key
+            if now - last_at.get(key, float("-inf")) < _interval(cap, timing):
+                continue
+            pending.discard(key)
+            market, observation = _observe(hub, code, cap, cid, snapshots)
+            body = observation.model_dump_json()
+            if last_sent.get(key) == body:
+                continue
+            last_sent[key] = body
+            last_at[key] = now
+            await websocket.send_text(json.dumps({
+                "type": "observation", "capability": cap,
+                "market": market.value if market is not None else None,
+                "observation": json.loads(body)}))
         try:
             changed = await asyncio.wait_for(queue.get(), tick)
-            pending.update((changed, cap) for cap in _CAPABILITIES if changed in codes)
+            pending.update(_changed_keys(hub, codes, changed))
             while not queue.empty():
-                changed = queue.get_nowait()
-                pending.update((changed, cap) for cap in _CAPABILITIES if changed in codes)
+                pending.update(_changed_keys(hub, codes, queue.get_nowait()))
         except asyncio.TimeoutError:
             pass

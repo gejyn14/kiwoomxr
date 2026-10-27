@@ -52,7 +52,7 @@ def build(balances, now=OPEN, price=Decimal("225000"), on_balance=None, account_
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     settings = make_settings()
-    rest = KiwoomRest(client, TokenProvider(client, settings, clock), settings)
+    rest = KiwoomRest(client, TokenProvider(client, settings, clock), settings, min_gap=0)
     notified = []
     service = AccountService(
         rest, clock, last_price=lambda code: price, notify=lambda: notified.append(1), sleep=clock.sleep

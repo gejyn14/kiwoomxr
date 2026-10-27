@@ -311,3 +311,40 @@ def test_hub_routes_index_ticks_and_account_events():
     assert calls == [1]
     boom = live_hub(Clock(kst(10, 0)), on_account=lambda: 1 / 0)
     boom.apply(AccountEvent(kst(10, 0)))  # swallowed
+
+
+def test_hub_forwards_account_events_to_an_attached_account_service():
+    class FakeAccount:
+        def __init__(self): self.signals = 0
+        def balance_changed(self): self.signals += 1
+
+    hub = live_hub(Clock(kst(10, 0)))
+    hub.account = FakeAccount()
+    hub.apply(AccountEvent(kst(10, 0)))
+    assert hub.account.signals == 1
+    assert hub.news is None
+
+
+def test_last_price_follows_the_market_the_hub_shows():
+    clock = Clock(kst(10, 0))
+    hub = live_hub(clock, watch_codes=["005930"])
+    assert hub.last_price("005930") is None
+    hub.apply(trade(kst(10, 0), 78800))
+    assert hub.last_price("005930") == Decimal("78800")
+    clock.now = kst(19, 59, 30)  # NXT after-market: the KRX quote is not what the hub shows
+    assert hub.last_price("005930") is None
+    hub.apply(trade(kst(19, 59, 29), 79000, market=Market.NXT))
+    assert hub.last_price("005930") == Decimal("79000")
+    clock.now = kst(20, 30)  # closed: last session that traded
+    assert hub.last_price("005930") == Decimal("79000")
+
+
+def test_seed_chart_stores_bars_and_notifies_subscribers():
+    from spatial_gateway.kiwoom.rest import Bar
+    hub = live_hub(Clock(kst(10, 0)), watch_codes=["005930"])
+    queue = hub.subscribe()
+    p = Decimal("100")
+    hub.seed_chart("005930", Market.KRX, "1D", [Bar(kst(9, 0, day=26), p, p, p, p, 5)])
+    assert queue.get_nowait() == "005930"
+    market, obs = hub.charts.observation("005930", "1D", CID, True, None)
+    assert market is Market.KRX and obs.value.interval == "1D"

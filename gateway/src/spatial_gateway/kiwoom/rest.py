@@ -1,3 +1,5 @@
+import asyncio
+import time
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -5,13 +7,11 @@ from decimal import Decimal
 import httpx
 
 from spatial_gateway.kiwoom.auth import TokenProvider
-from spatial_gateway.kiwoom.values import kst_datetime, price, quantity, signed
+from spatial_gateway.kiwoom.values import index_value, kst_datetime, price, quantity, signed
 from spatial_gateway.models import Holding
 from spatial_gateway.settings import Settings
 
 _INVALID_TOKEN = 8005
-_ONE = Decimal(1)
-_INDEX_SCALE = Decimal(100)
 
 
 class KiwoomApiError(Exception):
@@ -51,14 +51,28 @@ def mask_account(number: str) -> str:
 
 
 class KiwoomRest:
-    def __init__(self, client: httpx.AsyncClient, tokens: TokenProvider, settings: Settings) -> None:
+    def __init__(self, client: httpx.AsyncClient, tokens: TokenProvider, settings: Settings,
+                 *, min_gap: float = 0.25) -> None:
         self._client = client
         self._tokens = tokens
         self._settings = settings
+        self._min_gap = min_gap
+        self._pace = asyncio.Lock()
+        self._last_call: float | None = None
+
+    async def _wait_turn(self) -> None:
+        """Every caller (chart seeding, account) shares one spacing: at least `min_gap` between calls."""
+        async with self._pace:
+            if self._last_call is not None:
+                wait = self._last_call + self._min_gap - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+            self._last_call = time.monotonic()
 
     async def request(self, api_id: str, path: str, body: dict) -> dict:
         retried = False
         while True:
+            await self._wait_turn()
             token = await self._tokens.token()
             try:
                 response = await self._client.post(
@@ -91,7 +105,7 @@ class KiwoomRest:
             raise KiwoomApiError(code, msg if isinstance(msg, str) else "")
 
     async def _chart(
-        self, api_id: str, body: dict, list_key: str, time_key: str, daily: bool, scale: Decimal, limit: int
+        self, api_id: str, body: dict, list_key: str, time_key: str, daily: bool, index: bool, limit: int
     ) -> list[Bar]:
         data = await self.request(api_id, "/api/dostk/chart", body)
         rows = data.get(list_key)
@@ -99,7 +113,7 @@ class KiwoomRest:
             return []
         bars: list[Bar] = []
         for row in rows:
-            bar = _parse_bar(row, time_key, daily, scale) if isinstance(row, dict) else None
+            bar = _parse_bar(row, time_key, daily, index) if isinstance(row, dict) else None
             if bar is not None:
                 bars.append(bar)
         bars.sort(key=lambda b: b.start)
@@ -109,37 +123,37 @@ class KiwoomRest:
         return await self._chart(
             "ka10080",
             {"stk_cd": code, "tic_scope": "1", "upd_stkpc_tp": "0"},
-            "stk_min_pole_chart_qry", "cntr_tm", False, _ONE, limit,
+            "stk_min_pole_chart_qry", "cntr_tm", False, False, limit,
         )
 
     async def hour_candles(self, code: str, limit: int = 200) -> list[Bar]:
         return await self._chart(
             "ka10080",
             {"stk_cd": code, "tic_scope": "60", "upd_stkpc_tp": "0"},
-            "stk_min_pole_chart_qry", "cntr_tm", False, _ONE, limit,
+            "stk_min_pole_chart_qry", "cntr_tm", False, False, limit,
         )
 
     async def daily_candles(self, code: str, base_date: date, limit: int = 120) -> list[Bar]:
         return await self._chart(
             "ka10081",
             {"stk_cd": code, "base_dt": base_date.strftime("%Y%m%d"), "upd_stkpc_tp": "1"},
-            "stk_dt_pole_chart_qry", "dt", True, _ONE, limit,
+            "stk_dt_pole_chart_qry", "dt", True, False, limit,
         )
 
     async def index_daily(self, index_code: str, base_date: date, limit: int = 120) -> list[Bar]:
-        """ka20006. Live fixture: index prices arrive as 100x integers ("563834" = 5638.34), so divide by 100."""
+        """ka20006. Live fixture: index prices arrive as 100x integers ("563834" = 5638.34); see values.index_value."""
         return await self._chart(
             "ka20006",
             {"inds_cd": index_code, "base_dt": base_date.strftime("%Y%m%d")},
-            "inds_dt_pole_qry", "dt", True, _INDEX_SCALE, limit,
+            "inds_dt_pole_qry", "dt", True, True, limit,
         )
 
     async def index_hour(self, index_code: str, limit: int = 200) -> list[Bar]:
-        """ka20005. Live fixture: index prices arrive as 100x integers ("+563834" = 5638.34), so divide by 100."""
+        """ka20005. Live fixture: index prices arrive as 100x integers ("+563834" = 5638.34); see values.index_value."""
         return await self._chart(
             "ka20005",
             {"inds_cd": index_code, "tic_scope": "60"},
-            "inds_min_pole_qry", "cntr_tm", False, _INDEX_SCALE, limit,
+            "inds_min_pole_qry", "cntr_tm", False, True, limit,
         )
 
     async def account_number(self) -> str:
@@ -199,7 +213,7 @@ def _text(row: dict, key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _parse_bar(row: dict, time_key: str = "cntr_tm", daily: bool = False, scale: Decimal = _ONE) -> Bar | None:
+def _parse_bar(row: dict, time_key: str = "cntr_tm", daily: bool = False, index: bool = False) -> Bar | None:
     stamp = _text(row, time_key)
     if stamp is None:
         return None
@@ -207,15 +221,14 @@ def _parse_bar(row: dict, time_key: str = "cntr_tm", daily: bool = False, scale:
         start = kst_datetime(stamp.strip() + "090000") if len(stamp.strip()) == 8 else None
     else:
         start = kst_datetime(stamp)
-    open_ = price(_text(row, "open_pric"))
-    high = price(_text(row, "high_pric"))
-    low = price(_text(row, "low_pric"))
-    close = price(_text(row, "cur_prc"))
+    level = (lambda raw: index_value(raw, absolute=True)) if index else price
+    open_ = level(_text(row, "open_pric"))
+    high = level(_text(row, "high_pric"))
+    low = level(_text(row, "low_pric"))
+    close = level(_text(row, "cur_prc"))
     volume = quantity(_text(row, "trde_qty"))
     if start is None or open_ is None or high is None or low is None or close is None or volume is None:
         return None
     if not (low <= open_ <= high and low <= close <= high):
         return None
-    if scale != _ONE:
-        open_, high, low, close = (v / scale for v in (open_, high, low, close))
     return Bar(start=start, open=open_, high=high, low=low, close=close, volume=volume)
