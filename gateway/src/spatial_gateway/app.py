@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header, Path
@@ -6,7 +7,9 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from typing import Annotated
 
-from .capabilities import MarketCapabilities, SpecificationGatedMarket
+from .capabilities import HubMarket, MarketCapabilities
+from .kiwoom.values import KST
+from .market.hub import MarketHub
 from .models import CandleSeries, Observation, OrderBook, Quote
 
 InstrumentCode = Annotated[str, Path(pattern=r"^[0-9]{6}$")]
@@ -16,7 +19,7 @@ CorrelationHeader = Annotated[UUID | None, Header(alias="X-Correlation-ID")]
 def create_app(market: MarketCapabilities | None = None) -> FastAPI:
     app = FastAPI(title="Spatial Trading Gateway", version="0.2.0")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
-    provider = market or SpecificationGatedMarket()
+    provider = market or HubMarket(MarketHub(lambda: datetime.now(KST)))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):

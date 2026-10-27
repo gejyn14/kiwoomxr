@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from spatial_gateway.app import create_app
+from spatial_gateway.capabilities import HubMarket
+from spatial_gateway.kiwoom.values import KST
+from spatial_gateway.market.hub import MarketHub
 from spatial_gateway.models import Candle, CandleSeries, DataState, Observation, Origin, Quote
 
 
@@ -42,15 +45,15 @@ def test_live_requires_authoritative_source_time(origin, source_at):
 
 
 @pytest.mark.parametrize("capability", ["quote", "candles", "orderbook"])
-def test_missing_spec_cannot_produce_financial_values_or_read_credentials(capability, monkeypatch):
+def test_untracked_code_cannot_produce_financial_values_or_read_credentials(capability, monkeypatch):
     monkeypatch.setenv("KIWOOM_APPKEY", "must-not-be-read-or-reflected")
     correlation_id = str(uuid4())
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(HubMarket(MarketHub(lambda: datetime(2026, 10, 27, 10, 0, tzinfo=KST))))) as client:
         response = client.get(f"/v1/market/005930/{capability}", headers={"X-Correlation-ID": correlation_id})
     assert response.status_code == 200
     data = response.json()
     assert data["state"] == "UNAVAILABLE"
-    assert data["reason"] == "BLOCKED_BY_MISSING_SPEC:K-01"
+    assert data["reason"] == "NOT_SUBSCRIBED"
     assert data["value"] is None
     assert data["received_at"] is None
     assert data["correlation_id"] == correlation_id
