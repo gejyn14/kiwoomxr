@@ -92,7 +92,7 @@ namespace SpatialTrading.Domain
             var cur = rects[id];
             int x = (int)Math.Round(xMeters / CellMeters - cur.Width / 2.0, MidpointRounding.AwayFromZero);
             int y = (int)Math.Round(yMeters / CellMeters - cur.Height / 2.0, MidpointRounding.AwayFromZero);
-            return Store(id, Place(id, plane, x, y, cur.Width, cur.Height));
+            return Place(id, plane, x, y, cur.Width, cur.Height, out var placed) ? Store(id, placed) : cur;
         }
 
         public PanelRect Resize(PanelId id, int width, int height)
@@ -101,7 +101,7 @@ namespace SpatialTrading.Domain
             var cur = rects[id];
             int w = Math.Max(minW, Math.Min(maxW, width));
             int h = Math.Max(minH, Math.Min(maxH, height));
-            return Store(id, Place(id, cur.Plane, cur.X, cur.Y, w, h));
+            return Place(id, cur.Plane, cur.X, cur.Y, w, h, out var placed) ? Store(id, placed) : cur;
         }
 
         public void Dismiss(PanelId id) => dismissed.Add(id);
@@ -110,7 +110,7 @@ namespace SpatialTrading.Domain
         {
             if (!dismissed.Contains(id)) return rects[id];
             var d = DefaultRect(id);
-            var r = Place(id, d.Plane, d.X, d.Y, d.Width, d.Height, ignoreSelf: true);
+            Place(id, d.Plane, d.X, d.Y, d.Width, d.Height, out var r);
             dismissed.Remove(id);
             rects[id] = r;
             return r;
@@ -165,7 +165,8 @@ namespace SpatialTrading.Domain
         }
 
         // Clamp into the plane, then search outward in Chebyshev rings for the nearest free cell.
-        PanelRect Place(PanelId self, Plane plane, int x, int y, int w, int h, bool ignoreSelf = false)
+        // Returns false when nothing fits; placed is then the clamped rect (overlapping).
+        bool Place(PanelId self, Plane plane, int x, int y, int w, int h, out PanelRect placed)
         {
             Bounds(plane, out int minX, out int maxX, out int minY, out int maxY);
             w = Math.Min(w, maxX - minX + 1);
@@ -174,7 +175,8 @@ namespace SpatialTrading.Domain
             int cx = Math.Max(loX, Math.Min(hiX, x));
             int cy = Math.Max(loY, Math.Min(hiY, y));
             var clamped = new PanelRect(plane, cx, cy, w, h);
-            if (!Blocked(self, clamped)) return clamped;
+            placed = clamped;
+            if (!Blocked(self, clamped)) return true;
 
             int maxRing = Math.Max(hiX - loX, hiY - loY);
             for (int ring = 1; ring <= maxRing; ring++)
@@ -197,9 +199,9 @@ namespace SpatialTrading.Domain
                         }
                     }
                 }
-                if (found) return new PanelRect(plane, cx + bestDx, cy + bestDy, w, h);
+                if (found) { placed = new PanelRect(plane, cx + bestDx, cy + bestDy, w, h); return true; }
             }
-            return clamped;
+            return false;
         }
     }
 }

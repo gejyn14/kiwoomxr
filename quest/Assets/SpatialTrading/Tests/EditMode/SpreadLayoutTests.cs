@@ -78,6 +78,29 @@ namespace SpatialTrading.Tests
             Assert.That(big.Width, Is.LessThanOrEqualTo(16));
             Assert.That(big.Height, Is.LessThanOrEqualTo(10));
             AssertInBounds(big);
+            AssertNoOverlap(l);
+        }
+
+        [Test] public void ResizeNeverLeavesAnOverlap()
+        {
+            var l = SpreadLayout.TraderDefault();
+            l.Resize(PanelId.ChartKiwoom, 8, 6);
+            AssertNoOverlap(l);
+            var before = l[PanelId.Order];
+            var after = l.Resize(PanelId.Order, 12, 7);
+            Assert.That(after, Is.EqualTo(before));
+            Assert.That(l[PanelId.Order], Is.EqualTo(before));
+            AssertNoOverlap(l);
+        }
+
+        [Test] public void DropWithNoFreeSpotKeepsPreviousRect()
+        {
+            var l = SpreadLayout.TraderDefault();
+            var before = l[PanelId.Order];
+            var r = l.Drop(PanelId.Order, Plane.Eye, 0.1f, 0.1f);
+            Assert.That(r, Is.EqualTo(before));
+            Assert.That(l[PanelId.Order], Is.EqualTo(before));
+            AssertNoOverlap(l);
         }
 
         [Test] public void ResetRestoresDismissedAndMovedPanels()
@@ -99,7 +122,7 @@ namespace SpatialTrading.Tests
             l.Dismiss(PanelId.News);
             Assert.That(l.IsDismissed(PanelId.News), Is.True);
             Assert.That(l.Dismissed, Is.EqualTo(new[] { PanelId.News }));
-            l.Drop(PanelId.OrderBook, Plane.Eye, (slot.X + 4.5f) * 0.05f, (slot.Y + 5.5f) * 0.05f);
+            l.Drop(PanelId.OrderBook, Plane.Eye, (slot.X + 4.3f) * 0.05f, (slot.Y + 5.3f) * 0.05f);
             var r = l.Restore(PanelId.News);
             Assert.That(l.IsDismissed(PanelId.News), Is.False);
             AssertNoOverlap(l);
