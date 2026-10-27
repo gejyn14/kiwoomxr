@@ -1,0 +1,76 @@
+"""Pure parsers for Kiwoom REST/WebSocket value strings.
+
+Financial values never pass through binary float: every number goes through Decimal(str).
+"""
+
+import re
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
+
+KST = timezone(timedelta(hours=9))
+
+_INTEGER = re.compile(r"[+-]?[0-9]+")
+_HHMMSS = re.compile(r"[0-9]{6}")
+_YYYYMMDDHHMMSS = re.compile(r"[0-9]{14}")
+
+
+def _decimal(text: str) -> Decimal | None:
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    return value if value.is_finite() else None
+
+
+def price(raw: str | None) -> Decimal | None:
+    """Absolute price. A leading '+'/'-' is a direction marker, not part of the value."""
+    if raw is None:
+        return None
+    text = raw.strip().lstrip("+-")
+    if not text:
+        return None
+    value = _decimal(text)
+    if value is None or value == 0:
+        return None
+    return value
+
+
+def signed(raw: str | None) -> Decimal | None:
+    """Signed value; the sign is meaningful and is preserved."""
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    return _decimal(text)
+
+
+def quantity(raw: str | None) -> int | None:
+    """Absolute integer quantity. Non-integer strings yield None."""
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not _INTEGER.fullmatch(text):
+        return None
+    return abs(int(text))
+
+
+def kst_time_today(hhmmss: str, today: date) -> datetime | None:
+    """Combine an HHMMSS string with a date, as an explicit KST datetime."""
+    if not _HHMMSS.fullmatch(hhmmss):
+        return None
+    try:
+        parsed = datetime.strptime(hhmmss, "%H%M%S")
+    except ValueError:
+        return None
+    return datetime(today.year, today.month, today.day, parsed.hour, parsed.minute, parsed.second, tzinfo=KST)
+
+
+def kst_datetime(yyyymmddhhmmss: str) -> datetime | None:
+    """Parse a YYYYMMDDHHMMSS string as an explicit KST datetime."""
+    if not _YYYYMMDDHHMMSS.fullmatch(yyyymmddhhmmss):
+        return None
+    try:
+        return datetime.strptime(yyyymmddhhmmss, "%Y%m%d%H%M%S").replace(tzinfo=KST)
+    except ValueError:
+        return None
