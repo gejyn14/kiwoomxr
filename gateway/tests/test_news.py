@@ -202,3 +202,32 @@ def test_feed_is_deduplicated_newest_first_and_capped():
     times = [i.published_at for i in merged]
     assert times == sorted(times, reverse=True)
     NewsFeed(items=tuple(merged))
+
+
+@pytest.mark.parametrize("status", [200, 500])
+async def test_dart_key_absent_from_httpx_logs(caplog, status):
+    def handler(request):
+        if request.url.host == "opendart.fss.or.kr":
+            return httpx.Response(status, json=DART_OK)
+        return httpx.Response(200, content=rss_xml(["A1"]))
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    svc = news.NewsService(client, settings(), clock=lambda: NOW, notify=lambda: None)
+    with caplog.at_level(logging.DEBUG):
+        await svc.poll()
+    assert KEY not in caplog.text
+
+
+def test_dart_filings_with_repeated_titles_all_survive():
+    filings = news.parse_dart(DART_OK, "005930")
+    assert len(news.merge_items([filings])) == len(filings)
+
+
+def test_same_title_filings_of_different_companies_survive():
+    a = news.parse_dart({"list": [{"report_nm": "사업보고서", "rcept_dt": "20261026"}]}, "005930")
+    b = news.parse_dart({"list": [{"report_nm": "사업보고서", "rcept_dt": "20261026"}]}, "039490")
+    assert len(news.merge_items([a, b])) == 2
+
+
+def test_same_title_news_still_collapses():
+    assert len(news.merge_items([[item("dup", 1)], [item("dup", 2)]])) == 1

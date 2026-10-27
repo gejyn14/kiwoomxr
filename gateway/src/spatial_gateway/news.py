@@ -17,6 +17,9 @@ from spatial_gateway.market.observe import observe
 from spatial_gateway.models import NEWS, NewsFeed, NewsItem, Observation, Origin
 
 log = logging.getLogger(__name__)
+# httpx logs "GET <full url>" at INFO and the DART URL carries the API key.
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 # Verified against DART corpCode.xml (stock_code -> corp_code).
 CORP_CODES: dict[str, str] = {"039490": "00296290", "005930": "00126380", "000660": "00164779"}
@@ -89,9 +92,12 @@ def merge_items(groups) -> list[NewsItem]:
     everything = sorted((i for group in groups for i in group), key=lambda i: i.published_at, reverse=True)
     seen, merged = set(), []
     for entry in everything:
-        if entry.title in seen:
+        # Headlines repeat across feeds; filing names repeat legitimately across dates and companies.
+        key = (("NEWS", entry.title) if entry.kind == "NEWS"
+               else ("FILING", entry.title, entry.mentions, entry.published_at))
+        if key in seen:
             continue
-        seen.add(entry.title)
+        seen.add(key)
         merged.append(entry)
     return merged[:MAX_ITEMS]
 
