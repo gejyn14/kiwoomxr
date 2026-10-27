@@ -110,3 +110,36 @@ def test_settings_require_keys_and_strong_pairing_token():
         Settings.from_env({**base, "GATEWAY_PAIRING_TOKEN": "short"})
     with pytest.raises(ValueError):
         Settings.from_env({**base, "GATEWAY_WATCH_CODES": "005930,ABC123"})
+
+
+def test_settings_read_dart_key_index_codes_and_feeds():
+    base = {
+        "KIWOOM_APPKEY": "a",
+        "KIWOOM_SECRETKEY": "b",
+        "GATEWAY_PAIRING_TOKEN": "x" * 32,
+        "GATEWAY_WATCH_CODES": "005930",
+        "GATEWAY_ALLOWED_HOSTS": "127.0.0.1",
+    }
+    settings = Settings.from_env(base)
+    assert settings.dart_api_key is None
+    assert settings.index_codes == ("001",)
+    assert settings.news_feeds == ()
+
+    full = Settings.from_env(
+        {
+            **base,
+            "DART_API_KEY": "DART-SECRET-VALUE",
+            "GATEWAY_INDEX_CODES": "001, 101",
+            "GATEWAY_NEWS_FEEDS": "https://a.example/rss, https://b.example/rss",
+        }
+    )
+    assert full.dart_api_key == "DART-SECRET-VALUE"
+    assert full.index_codes == ("001", "101")
+    assert full.news_feeds == ("https://a.example/rss", "https://b.example/rss")
+    assert "DART-SECRET-VALUE" not in repr(full)
+    assert Settings.from_env({**base, "DART_API_KEY": "  "}).dart_api_key is None
+
+    with pytest.raises(ValueError):
+        Settings.from_env({**base, "GATEWAY_INDEX_CODES": "1"})
+    with pytest.raises(ValueError):
+        Settings.from_env({**base, "GATEWAY_NEWS_FEEDS": "http://x"})

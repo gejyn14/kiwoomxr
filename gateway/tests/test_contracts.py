@@ -10,7 +10,18 @@ from spatial_gateway.app import create_app
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.market.hub import MarketHub
 from spatial_gateway.settings import Settings
-from spatial_gateway.models import Candle, CandleSeries, DataState, Observation, Origin, Quote
+from spatial_gateway.models import (
+    Balance,
+    Candle,
+    CandleSeries,
+    DataState,
+    Holding,
+    NewsFeed,
+    NewsItem,
+    Observation,
+    Origin,
+    Quote,
+)
 
 
 TOKEN = "t" * 40
@@ -91,3 +102,59 @@ def test_decimal_transport_matches_client_precision_and_has_no_exponents():
     for value in ("0.123456789", "12345678901234567890123456789"):
         with pytest.raises(ValidationError):
             Quote(last_price=value)
+
+
+def _obs(code, **kw):
+    return Observation[Quote](instrument_code=code, state=DataState.LOADING, origin=Origin.KIWOOM, correlation_id="c", **kw)
+
+
+def test_subject_codes_accept_index_account_news_and_reject_others():
+    for code in ("005930", "001", "ACCOUNT", "NEWS"):
+        _obs(code)
+    for code in ("05930", "0001", "account", "00593O"):
+        with pytest.raises(ValidationError):
+            _obs(code)
+
+
+def _news_item(minute=0, title="t"):
+    return NewsItem(
+        kind="NEWS", source="src", title=title,
+        published_at=datetime(2026, 10, 27, 10, 30 - minute, tzinfo=timezone.utc),
+        mentions=(), filing_type=None,
+    )
+
+
+def test_news_origin_can_be_live_but_synthetic_cannot():
+    now = datetime(2026, 10, 27, 10, 0, tzinfo=timezone.utc)
+    feed = NewsFeed(items=(_news_item(),))
+    live = dict(instrument_code="NEWS", state=DataState.LIVE, value=feed, received_at=now, source_at=now, correlation_id="c")
+    Observation[NewsFeed](origin=Origin.NEWS, **live)
+    with pytest.raises(ValidationError):
+        Observation[NewsFeed](origin=Origin.SYNTHETIC, **live)
+
+
+def test_balance_accepts_only_masked_account():
+    kwargs = dict(
+        total_evaluation=Decimal("5000000"), total_profit=Decimal("-1000.5"), total_profit_rate=Decimal("-0.02"),
+        orderable_cash=Decimal("1032000"),
+        holdings=(Holding(code="005930", name="Samsung", quantity=3, average_price=Decimal("70000"),
+                          current_price=None, profit=None, profit_rate=None),),
+    )
+    balance = Balance(account="123*****90", **kwargs)
+    dumped = balance.model_dump(mode="json")
+    assert dumped["orderable_cash"] == "1032000"
+    assert dumped["holdings"][0]["quantity"] == "3"
+    with pytest.raises(ValidationError):
+        Balance(account="1234567890", **kwargs)
+    with pytest.raises(ValidationError):
+        Balance(account="123*****90", **{**kwargs, "orderable_cash": 1.5})
+
+
+def test_news_feed_must_be_newest_first_and_bounded():
+    NewsFeed(items=(_news_item(0), _news_item(1)))
+    with pytest.raises(ValidationError):
+        NewsFeed(items=(_news_item(1), _news_item(0)))
+    with pytest.raises(ValidationError):
+        NewsFeed(items=tuple(_news_item(0) for _ in range(41)))
+    with pytest.raises(ValidationError):
+        _news_item(title="x" * 201)

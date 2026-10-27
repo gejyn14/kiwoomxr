@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 _CODE = re.compile(r"^[0-9]{6}$")
+_INDEX_CODE = re.compile(r"^[0-9]{3}$")
 _MIN_PAIRING_TOKEN = 32
 
 
@@ -19,6 +20,9 @@ class Settings:
     allowed_hosts: tuple[str, ...]
     rest_origin: str = "https://api.kiwoom.com"
     ws_url: str = "wss://api.kiwoom.com:10000/api/dostk/websocket"
+    dart_api_key: str | None = None
+    index_codes: tuple[str, ...] = ("001",)
+    news_feeds: tuple[str, ...] = ()  # empty: the news service uses its own DEFAULT_FEEDS
 
     def __repr__(self) -> str:
         return "Settings(<redacted>)"
@@ -40,4 +44,20 @@ class Settings:
         if not watch_codes or any(not _CODE.fullmatch(code) for code in watch_codes):
             raise ValueError("GATEWAY_WATCH_CODES must be comma-separated 6-digit codes")
         allowed_hosts = _split(required("GATEWAY_ALLOWED_HOSTS"))
-        return cls(appkey, secretkey, pairing_token, watch_codes, allowed_hosts)
+        dart_api_key = env.get("DART_API_KEY", "").strip() or None
+        index_codes = _split(env.get("GATEWAY_INDEX_CODES", "")) or ("001",)
+        if any(not _INDEX_CODE.fullmatch(code) for code in index_codes):
+            raise ValueError("GATEWAY_INDEX_CODES must be comma-separated 3-digit codes")
+        news_feeds = _split(env.get("GATEWAY_NEWS_FEEDS", ""))
+        if any(not feed.startswith("https://") for feed in news_feeds):
+            raise ValueError("GATEWAY_NEWS_FEEDS must be comma-separated https URLs")
+        return cls(
+            appkey,
+            secretkey,
+            pairing_token,
+            watch_codes,
+            allowed_hosts,
+            dart_api_key=dart_api_key,
+            index_codes=index_codes,
+            news_feeds=news_feeds,
+        )
