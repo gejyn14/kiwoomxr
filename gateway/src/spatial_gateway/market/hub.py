@@ -7,7 +7,7 @@ cannot form valid models are dropped whole, so existing state is never corrupted
 import asyncio
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -35,6 +35,27 @@ class HubSnapshot:
 
 
 @dataclass
+class _Bar:
+    start: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    rest_volume: int | None = None
+    live_volume: int | None = None
+    trade_at: datetime | None = None  # latest live trade folded into this bar
+
+    @property
+    def key(self) -> str:
+        return _key(self.start)
+
+    def candle(self) -> Candle:
+        volumes = [v for v in (self.rest_volume, self.live_volume) if v is not None]
+        return Candle(period_key=self.key, open=self.open, high=self.high, low=self.low,
+                      close=self.close, volume=max(volumes) if volumes else None)
+
+
+@dataclass
 class _State:
     quote: Quote | None = None
     quote_at: datetime | None = None
@@ -42,8 +63,7 @@ class _State:
     book: OrderBook | None = None
     book_at: datetime | None = None
     book_received: datetime | None = None
-    bars: list[Candle] = field(default_factory=list)
-    bar_starts: dict[str, datetime] = field(default_factory=dict)
+    bars: list[_Bar] = field(default_factory=list)
     seeded_at: datetime | None = None
     trade_at: datetime | None = None
     series_received: datetime | None = None
@@ -62,14 +82,19 @@ def _aware(at: datetime) -> None:
         raise ValueError("naive datetime")
 
 
+def _check(bars: list[_Bar]) -> None:
+    CandleSeries(interval="1m", adjustment="unadjusted", candles=tuple(b.candle() for b in bars))
+
+
 class MarketHub:
-    def __init__(self, clock: Callable[[], datetime], max_bars: int = 240):
+    def __init__(self, clock: Callable[[], datetime], max_bars: int = 240, *, watch_codes: Sequence[str] = ()):
         self._clock = clock
         self._max_bars = max_bars
         self._states: dict[tuple[str, Market], _State] = {}
         self._subscribers: list[asyncio.Queue[str]] = []
-        self._connected = True
-        self._reason: str | None = None
+        self._watched = frozenset(watch_codes)
+        self._connected = False
+        self._reason: str | None = "KIWOOM_CONNECTING"
 
     # -- subscribers -------------------------------------------------------
     def subscribe(self) -> asyncio.Queue[str]:
@@ -95,24 +120,27 @@ class MarketHub:
     def seed_candles(self, code: str, market: Market, bars: Sequence[MinuteBar]) -> None:
         try:
             now = self._clock()
-            seeded: dict[str, tuple[datetime, Candle]] = {}
+            state = self._states.get((code, market)) or _State()
+            merged = {b.key: replace(b) for b in state.bars}
             for item in sorted(bars, key=lambda b: b.start):
                 _aware(item.start)
                 start = _minute(item.start)
-                seeded[_key(start)] = (start, Candle(
-                    period_key=_key(start), open=item.open, high=item.high, low=item.low,
-                    close=item.close, volume=item.volume))
-            state = self._states.get((code, market)) or _State()
-            merged = {k: (state.bar_starts[k], c) for k, c in zip(state.bar_starts, state.bars)}
-            for k, v in seeded.items():
-                merged.setdefault(k, v)  # live-built bars win over REST
-            ordered = sorted(merged.items())[-self._max_bars:]
-            CandleSeries(interval="1m", adjustment="unadjusted", candles=tuple(c for _, (_, c) in ordered))
+                key = _key(start)
+                live = merged.get(key)
+                if live is None:
+                    merged[key] = _Bar(start, item.open, item.high, item.low, item.close, rest_volume=item.volume)
+                else:  # same minute from REST and live: open from REST, close from live if any trade
+                    live.open = item.open
+                    live.high, live.low = max(live.high, item.high), min(live.low, item.low)
+                    if live.trade_at is None:
+                        live.close = item.close
+                    live.rest_volume = item.volume
+            ordered = [merged[k] for k in sorted(merged)][-self._max_bars:]
+            _check(ordered)
         except Exception as error:
             log.warning("minute bar seed dropped: %s", type(error).__name__)
             return
-        state.bars = [c for _, (_, c) in ordered]
-        state.bar_starts = {k: s for k, (s, _) in ordered}
+        state.bars = ordered
         state.seeded_at = now
         state.series_received = state.series_received or now
         self._states[(code, market)] = state
@@ -121,47 +149,55 @@ class MarketHub:
     def apply(self, event: Trade | Book) -> None:
         try:
             if isinstance(event, Trade):
-                self._apply_trade(event)
+                changed = self._apply_trade(event)
             elif isinstance(event, Book):
-                self._apply_book(event)
+                changed = self._apply_book(event)
             else:
                 return
         except Exception as error:
             log.warning("realtime event dropped: %s", type(error).__name__)
             return
-        self._notify(event.code)
+        if changed:
+            self._notify(event.code)
 
-    def _apply_trade(self, t: Trade) -> None:
+    def _apply_trade(self, t: Trade) -> bool:
         _aware(t.at)
         now = self._clock()
         quote = Quote(last_price=t.price, change=t.change, change_percent=t.change_percent, volume=t.acc_volume)
         state = self._states.get((t.code, t.market)) or _State()
+        fresher = state.quote_at is None or t.at >= state.quote_at
         start = _minute(t.at)
         key = _key(start)
-        bars, starts = list(state.bars), dict(state.bar_starts)
-        if bars and key == bars[-1].period_key:
-            last = bars[-1]
-            bars[-1] = Candle(period_key=key, open=last.open, high=max(last.high, t.price),
-                              low=min(last.low, t.price), close=t.price,
-                              volume=(last.volume or 0) + (t.volume or 0))
-        elif not bars or key > bars[-1].period_key:
-            bars.append(Candle(period_key=key, open=t.price, high=t.price, low=t.price,
-                               close=t.price, volume=t.volume or 0))
-            starts[key] = start
-            for old in bars[:-self._max_bars]:
-                starts.pop(old.period_key, None)
+        bars = [replace(b) for b in state.bars]
+        touched_bars = False
+        if bars and key == bars[-1].key:
+            bar = bars[-1]
+            bar.high, bar.low = max(bar.high, t.price), min(bar.low, t.price)
+            bar.live_volume = (bar.live_volume or 0) + (t.volume or 0)
+            if bar.trade_at is None or t.at >= bar.trade_at:
+                bar.close, bar.trade_at = t.price, t.at
+            touched_bars = True
+        elif not bars or key > bars[-1].key:
+            bars.append(_Bar(start, t.price, t.price, t.price, t.price,
+                             live_volume=t.volume or 0, trade_at=t.at))
             bars = bars[-self._max_bars:]
-        else:
-            bars = None  # late trade for a closed minute: quote only
-        if bars is not None:
-            CandleSeries(interval="1m", adjustment="unadjusted", candles=tuple(bars))
-        state.quote, state.quote_at, state.quote_received = quote, t.at, now
-        if bars is not None:
-            state.bars, state.bar_starts = bars, starts
-            state.trade_at, state.series_received = t.at, now
+            touched_bars = True
+        elif not fresher:
+            return False  # stale trade for an already-closed minute
+        if touched_bars:
+            _check(bars)
+        if not touched_bars and not fresher:
+            return False
+        if fresher:
+            state.quote, state.quote_at, state.quote_received = quote, t.at, now
+        if touched_bars:
+            state.bars = bars
+            state.trade_at = t.at if state.trade_at is None else max(state.trade_at, t.at)
+            state.series_received = now
         self._states[(t.code, t.market)] = state
+        return True
 
-    def _apply_book(self, b: Book) -> None:
+    def _apply_book(self, b: Book) -> bool:
         _aware(b.at)
         now = self._clock()
         if len(b.asks) != 10 or len(b.bids) != 10:
@@ -170,8 +206,11 @@ class MarketHub:
             asks=tuple(BookLevel(rank=i + 1, price=p, quantity=q) for i, (p, q) in enumerate(b.asks)),
             bids=tuple(BookLevel(rank=i + 1, price=p, quantity=q) for i, (p, q) in enumerate(b.bids)))
         state = self._states.get((b.code, b.market)) or _State()
+        if state.book_at is not None and b.at < state.book_at:
+            return False
         state.book, state.book_at, state.book_received = book, b.at, now
         self._states[(b.code, b.market)] = state
+        return True
 
     # -- reads -------------------------------------------------------------
     def observations(self, code: str, correlation_id: str) -> HubSnapshot:
@@ -184,7 +223,7 @@ class MarketHub:
                 received_at=received, source_at=source, reason=reason, correlation_id=correlation_id)
 
         def one(model, value, received, source):
-            if not any(k[0] == code for k in self._states):
+            if code not in self._watched and not any(k[0] == code for k in self._states):
                 return empty(model, DataState.UNAVAILABLE, "NOT_SUBSCRIBED")
             if not self._connected:
                 return empty(model, DataState.DISCONNECTED, self._reason, value, received, source)
@@ -205,12 +244,12 @@ class MarketHub:
             last = len(state.bars) - 1
             series = CandleSeries(
                 interval="1m", adjustment="unadjusted",
-                candles=tuple(c.model_copy(update={"complete": i != last}) for i, c in enumerate(state.bars)))
+                candles=tuple(b.candle().model_copy(update={"complete": i != last}) for i, b in enumerate(state.bars)))
             received = state.series_received
             if state.trade_at is not None:
                 source = state.trade_at
             else:
-                source = state.bar_starts[state.bars[-1].period_key]
+                source = state.bars[-1].start
                 received = state.seeded_at
                 delayed = abs(_minute(now) - source) > _SEED_LIVE_WINDOW
         candles = one(CandleSeries, series, received, source)
