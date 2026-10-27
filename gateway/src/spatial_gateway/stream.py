@@ -24,7 +24,8 @@ log = logging.getLogger(__name__)
 
 CLOSE_UNAUTHORIZED = 4401
 _CODE = re.compile(r"^([0-9]{6}|[0-9]{3})$")  # stock or index
-_STOCK_CAPABILITIES = ("quote", "candles", "orderbook", "candles_1d", "candles_4h")
+# The legacy 1-minute "candles" series is REST-only now: no panel shows it, so it is not streamed.
+_STOCK_CAPABILITIES = ("quote", "orderbook", "candles_1d", "candles_4h")
 _INDEX_CAPABILITIES = ("quote", "candles_1d", "candles_4h")  # an index has no order book
 _CHART_INTERVALS = {"candles_1d": "1D", "candles_4h": "4H"}
 _SUBJECT_CAPABILITY = {ACCOUNT: "balance", NEWS: "news"}  # one per connection, not tied to codes
@@ -33,7 +34,7 @@ _SUBJECT_CAPABILITY = {ACCOUNT: "balance", NEWS: "news"}  # one per connection, 
 @dataclass(frozen=True)
 class StreamTiming:
     quote_interval: float = 0.1     # per (code, capability) coalescing window
-    candles_interval: float = 0.5   # candles (1m, 1D, 4H) at most 2 per second
+    candles_interval: float = 0.5   # candles (1D, 4H) at most 2 per second
     subject_interval: float = 1.0   # balance and news at most once per second
     heartbeat_interval: float = 5.0
     handshake_timeout: float = 10.0
@@ -116,20 +117,25 @@ def _subjects(hub: MarketHub) -> list[str]:
     return [subject for subject, service in ((ACCOUNT, hub.account), (NEWS, hub.news)) if service is not None]
 
 
+def _code_keys(codes: list[str]) -> set[tuple[str, str]]:
+    return {(c, cap) for c in codes for cap in (_INDEX_CAPABILITIES if _is_index(c) else _STOCK_CAPABILITIES)}
+
+
 def _keys(hub: MarketHub, codes: list[str]) -> set[tuple[str, str]]:
-    keys = {(c, cap) for c in codes for cap in (_INDEX_CAPABILITIES if _is_index(c) else _STOCK_CAPABILITIES)}
+    keys = _code_keys(codes)
     keys.update((subject, _SUBJECT_CAPABILITY[subject]) for subject in _subjects(hub))
     return keys
 
 
 def _changed_keys(hub: MarketHub, codes: list[str], changed: str) -> set[tuple[str, str]]:
+    """A code tick re-observes that code only; balance and news are re-observed on their own notifications."""
     if changed in _SUBJECT_CAPABILITY:
         return {(changed, _SUBJECT_CAPABILITY[changed])} if changed in _subjects(hub) else set()
-    return _keys(hub, [changed]) if changed in codes else set()
+    return _code_keys([changed]) if changed in codes else set()
 
 
 def _interval(cap: str, timing: StreamTiming) -> float:
-    if cap == "candles" or cap in _CHART_INTERVALS:
+    if cap in _CHART_INTERVALS:
         return timing.candles_interval
     if cap in ("balance", "news"):
         return timing.subject_interval

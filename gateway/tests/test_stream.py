@@ -56,9 +56,10 @@ def test_subscribe_receives_snapshot_then_updates():
     hub, client = make()
     with client.websocket_connect("/v1/stream") as ws:
         ws.send_text(sub())
-        first = collect(ws, lambda m: len([x for x in m if x["type"] == "observation"]) >= 5)
+        first = collect(ws, lambda m: len([x for x in m if x["type"] == "observation"]) >= 4)
         obs = [m for m in first if m["type"] == "observation"]
-        assert {m["capability"] for m in obs} == {"quote", "candles", "orderbook", "candles_1d", "candles_4h"}
+        # The legacy 1-minute "candles" series is not streamed: no panel shows it.
+        assert {m["capability"] for m in obs} == {"quote", "orderbook", "candles_1d", "candles_4h"}
         assert all(m["observation"]["correlation_id"] == CID for m in obs)
         assert all(m["market"] == "KRX" for m in obs)
         hub.apply(trade("78800"))
@@ -422,7 +423,7 @@ def test_stock_subscription_gets_daily_and_four_hour_charts():
     hub.seed_chart("005930", Market.KRX, "1D", [bar(26, 9)])
     with client.websocket_connect("/v1/stream") as ws:
         ws.send_text(sub(codes=("005930",)))
-        seen = collect(ws, lambda m: caps(m) >= {"quote", "orderbook", "candles", "candles_1d", "candles_4h",
+        seen = collect(ws, lambda m: caps(m) >= {"quote", "orderbook", "candles_1d", "candles_4h",
                                                  "balance", "news"}, limit=200)
         hub.seed_chart("005930", Market.KRX, "4H", [bar(27, 9, "101")])  # a later seed is pushed
         more = collect(ws, lambda m: any(x["capability"] == "candles_4h" and x["observation"]["value"]
@@ -457,6 +458,24 @@ def test_balance_and_news_sent_once_per_change_to_every_client():
                 sent = [m for m in observations(seen) if m["capability"] == cap]
                 assert len(sent) == 1
                 assert sent[0]["market"] is None and sent[0]["observation"]["instrument_code"] == subject
+
+
+def test_stream_never_sends_the_legacy_minute_candles():
+    hub, client = make_spread()
+    with client.websocket_connect("/v1/stream") as ws:
+        ws.send_text(sub())
+        seen = collect(ws, beats_after(2, lambda m: caps(m) >= {"quote", "orderbook", "candles_1d"}), limit=200)
+    assert "candles" not in caps(seen)
+
+
+def test_code_ticks_mark_only_code_keys_pending():
+    from spatial_gateway.stream import _changed_keys
+    hub, _ = make_spread()
+    keys = _changed_keys(hub, ["005930", "001"], "005930")
+    assert keys == {("005930", c) for c in ("quote", "orderbook", "candles_1d", "candles_4h")}
+    assert _changed_keys(hub, ["005930"], ACCOUNT) == {(ACCOUNT, "balance")}
+    assert _changed_keys(hub, ["005930"], NEWS) == {(NEWS, "news")}
+    assert _changed_keys(hub, ["005930"], "000660") == set()
 
 
 def test_stream_without_account_or_news_services_sends_neither():
