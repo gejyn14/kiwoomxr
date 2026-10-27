@@ -1,0 +1,52 @@
+{
+  "inds_cd": "001",
+  "inds_dt_pole_qry": [
+    {
+      "cur_prc": "563834",
+      "trde_qty": "196172",
+      "dt": "20261027",
+      "open_pric": "565865",
+      "high_pric": "573761",
+      "low_pric": "561292",
+      "trde_prica": "16417010"
+    },
+    {
+      "cur_prc": "546947",
+      "trde_qty": "202295",
+      "dt": "20261026",
+      "open_pric": "549905",
+      "high_pric": "556567",
+      "low_pric": "545511",
+      "trde_prica": "12991168"
+    },
+    {
+      "cur_prc": "555030",
+      "trde_qty": "249517",
+      "dt": "20261023",
+      "open_pric": "540317",
+      "high_pric": "555030",
+      "low_pric": "530598",
+      "trde_prica": "17374311"
+    },
+    {
+      "cur_prc": "553377",
+      "trde_qty": "217476",
+      "dt": "20261022",
+      "open_pric": "567011",
+      "high_pric": "574028",
+      "low_pric": "548598",
+      "trde_prica": "14915688"
+    },
+    {
+      "cur_prc": "573566",
+      "trde_qty": "225900",
+      "dt": "20261021",
+      "open_pric": "566634",
+      "high_pric": "581643",
+      "low_pric": "563014",
+      "trde_prica": "18441435"
+    }
+  ],
+  "return_code": 0,
+  "return_msg": "정상적으로 처리되었습니다"
+}

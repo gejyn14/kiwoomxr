@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -106,3 +106,56 @@ async def test_error_message_has_no_secrets():
     with pytest.raises(KiwoomApiError) as info:
         await rest.minute_candles("005930")
     assert "T1" not in str(info.value)
+
+
+def _fx(name):
+    return json.loads((Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8"))
+
+
+async def test_daily_candles_parse_fixture_and_request_adjusted_prices():
+    rest, requests, _ = build([_fx("ka10081_005930.json")])
+    bars = await rest.daily_candles("005930", date(2026, 10, 28))
+    (req,) = requests
+    assert req.headers["api-id"] == "ka10081"
+    body = json.loads(req.content)
+    assert body["upd_stkpc_tp"] == "1" and body["base_dt"] == "20261028" and body["stk_cd"] == "005930"
+    assert len(bars) == 5
+    assert [b.start for b in bars] == sorted(b.start for b in bars)
+    assert bars[-1].start == datetime(2026, 10, 27, 9, 0, tzinfo=KST)
+    assert all(isinstance(b.close, Decimal) and b.close > 0 for b in bars)
+
+
+async def test_hour_candles_use_tic_scope_60():
+    rest, requests, _ = build([_fx("ka10080_60_005930.json")])
+    bars = await rest.hour_candles("005930")
+    assert json.loads(requests[0].content)["tic_scope"] == "60"
+    assert bars and all(b.start.minute == 0 for b in bars)
+
+
+async def test_index_daily_scales_to_index_points():
+    rest, requests, _ = build([_fx("ka20006_001.json")])
+    bars = await rest.index_daily("001", date(2026, 10, 28))
+    assert requests[0].headers["api-id"] == "ka20006"
+    assert json.loads(requests[0].content) == {"inds_cd": "001", "base_dt": "20261028"}
+    assert 1000 < bars[-1].close < 10000
+    assert bars[-1].close == Decimal("5638.34")
+    assert all(b.close.as_tuple().exponent >= -2 for b in bars)
+
+
+async def test_index_hour_parses_fixture():
+    rest, requests, _ = build([_fx("ka20005_60_001.json")])
+    bars = await rest.index_hour("001")
+    body = json.loads(requests[0].content)
+    assert requests[0].headers["api-id"] == "ka20005" and body["inds_cd"] == "001" and body["tic_scope"] == "60"
+    assert bars and [b.start for b in bars] == sorted(b.start for b in bars)
+    assert 1000 < bars[-1].close < 10000
+
+
+async def test_chart_rows_with_missing_or_inverted_prices_are_dropped():
+    data = _fx("ka10081_005930.json")
+    rows = data["stk_dt_pole_chart_qry"]
+    rows[0] = {**rows[0], "high_pric": "1", "low_pric": "999999"}
+    rows[1] = {**rows[1], "cur_prc": ""}
+    rest, _, _ = build([data])
+    bars = await rest.daily_candles("005930", date(2026, 10, 28))
+    assert len(bars) == 3
