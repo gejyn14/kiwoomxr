@@ -96,7 +96,8 @@ namespace SpatialTrading.Market
                     var mentions = new List<string>();
                     foreach (var m in Array(n, "mentions"))
                     {
-                        if (m.Type != JTokenType.String || !Regex.IsMatch(m.Value<string>(), @"^[0-9]{6}$")) throw Invalid();
+                        // A stock code (6 digits) or the index code (3 digits, e.g. 코스피 001).
+                        if (m.Type != JTokenType.String || !Regex.IsMatch(m.Value<string>(), @"^([0-9]{6}|[0-9]{3})$")) throw Invalid();
                         mentions.Add(m.Value<string>());
                     }
                     items.Add(new NewsItem(kind == "FILING", Text(n, "source"), Text(n, "title"),

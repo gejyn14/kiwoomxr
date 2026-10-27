@@ -41,6 +41,7 @@ namespace SpatialTrading.Components
         [SerializeField] private RectTransform _qtyLock;
         [SerializeField] private Button _prepare;
         [SerializeField] private TextMeshProUGUI _prepareText;
+        [SerializeField] private TextMeshProUGUI _reason;
         [SerializeField] private SpatialCardGraphic _card;
         [SerializeField] private SpatialCardGraphic _cardBadge;
         [SerializeField] private TextMeshProUGUI _cardBadgeText;
@@ -99,6 +100,7 @@ namespace SpatialTrading.Components
             _prepare = Holo.Button(transform, "Prepare");
             _prepareText = Chip((SpatialCardGraphic)_prepare.targetGraphic, "PrepareText", HoloStyle.Amber, 20f);
             _prepareText.text = "매수 준비";
+            BuildReason();
 
             _card = Holo.Card(transform, "Preview Card", HoloStyle.Alpha(HoloStyle.Amber, .07f), HoloStyle.Alpha(HoloStyle.Amber, .7f), 1.5f, 8f);
             _cardBadge = Holo.Card(_card.transform, "Preview Badge", HoloStyle.Alpha(HoloStyle.Amber, .14f), HoloStyle.Amber, 1.5f, 5f);
@@ -236,16 +238,37 @@ namespace SpatialTrading.Components
                 y += valueH + RowGap;
 
                 var actionH = compact ? ActionH - 4f : ActionH;
-                Holo.Place(_prepare, Pad, Mathf.Min(y, h - Top - actionH), inner, actionH);
+                var actionY = Mathf.Min(y, h - Top - actionH);
+                Holo.Place(_prepare, Pad, actionY, inner, actionH);
                 StyleAction(_prepare, _prepareText, view.PrepareEnabled);
+
+                // Why 매수 준비 is off, always visible (not only as a toast) whenever there is room under the button.
+                if (_reason == null) BuildReason();
+                var reasonY = actionY + actionH + 4f;
+                var reasonH = Holo.LineHeight(ReasonSize);
+                var showReason = !view.PrepareEnabled && !string.IsNullOrEmpty(view.LockReason) && reasonY + reasonH <= h - 4f;
+                Holo.Show(_reason, showReason);
+                if (showReason)
+                {
+                    Holo.Place(_reason, Pad, reasonY, inner, reasonH);
+                    _reason.text = view.LockReason;
+                }
             }
             else
             {
+                if (_reason != null) Holo.Show(_reason, false);
                 Holo.Show(_qtyLock, false);
                 DrawCard(inner, Mathf.Min(CardH, h - Top - y), y);
             }
 
             if (_toast.gameObject.activeSelf) PlaceToast(w, h);
+        }
+
+        private const float ReasonSize = 18f;
+
+        private void BuildReason()
+        {
+            _reason = Holo.Text(transform, "Reason", Font, ReasonSize, HoloStyle.Alpha(HoloStyle.Amber, .85f), TextAlignmentOptions.Center);
         }
 
         private void DrawCard(float inner, float cardH, float y)

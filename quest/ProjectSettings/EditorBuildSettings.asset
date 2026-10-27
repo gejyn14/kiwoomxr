@@ -6,8 +6,8 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/SpatialTrading/Scenes/FocusShell.unity
-    guid: 5f15cd9ff037f43a19600fd8ee082453
+    path: Assets/SpatialTrading/Scenes/TraderSpread.unity
+    guid: 72a47331a9038439da78a411eeb5d0c3
   m_configObjects:
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 70130ddd5293943e191c923c0f6dfef6, type: 2}
     com.unity.xr.openxr.settings4: {fileID: 11400000, guid: e0ccaf40ac63444aba6901419e72fd53, type: 2}

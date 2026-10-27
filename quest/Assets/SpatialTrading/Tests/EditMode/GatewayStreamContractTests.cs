@@ -106,6 +106,18 @@ namespace SpatialTrading.Tests
         }
 
         [Test]
+        public void ParsesNewsMentioningTheKospiIndexCode()
+        {
+            // The gateway tags 코스피 headlines with the index code "001"; one such item must not drop the whole feed.
+            var value = NewsValue.Replace("[\"005930\"]", "[\"005930\",\"001\"]");
+            var update = (StreamUpdate)GatewayStreamContract.Parse(Envelope("news", "NEWS", "NEWS", value), Sub);
+            Assert.That(update.News.Value.Items[0].Mentions, Is.EqualTo(new[] { "005930", "001" }));
+            foreach (var bad in new[] { "00593", "0059301", "A001", "" })
+                Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(
+                    Envelope("news", "NEWS", "NEWS", NewsValue.Replace("[\"005930\"]", "[\"" + bad + "\"]")), Sub));
+        }
+
+        [Test]
         public void RejectsNewsOriginOnMarketCapabilities()
         {
             Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(

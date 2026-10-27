@@ -2,9 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using Oculus.Interaction;
-using SpatialTrading.Interfaces;
-using SpatialTrading.Spatial;
 using SpatialTrading.Market;
+using SpatialTrading.Spread;
 using TMPro;
 using UnityEditor;
 using UnityEditor.Build;
@@ -52,24 +51,25 @@ namespace SpatialTrading.Editor
             if (!SessionState.GetBool(RecordingKey, false) || !EditorApplication.isPlaying ||
                 EditorApplication.isCompiling || EditorApplication.timeSinceStartup < _nextSnapshot) return;
             _nextSnapshot = EditorApplication.timeSinceStartup + 1;
-            var shell = Object.FindFirstObjectByType<FocusShell>();
+            var spread = Object.FindFirstObjectByType<SpreadWorkspace>();
             var rig = Object.FindFirstObjectByType<OVRCameraRig>();
-            if (shell == null || rig == null) return;
+            if (spread == null || rig == null) return;
             var market = Object.FindFirstObjectByType<MarketDataSession>();
+            var code = spread.SelectedInstrument.Code;
             var snapshot = new Snapshot
             {
                 capturedAt = DateTimeOffset.UtcNow.ToString("O"),
                 scope = "EDITOR_SIMULATOR_ONLY",
-                selectedInstrument = shell.State.SelectedInstrument.Id,
-                secondaryComponent = shell.State.SecondaryComponent?.ToString() ?? "closed",
-                contextRevision = shell.State.Revision,
+                selectedInstrument = spread.SelectedInstrument.Id,
+                ticketState = spread.Ticket.State.ToString(),
+                session = spread.Session.ToString(),
+                dismissed = spread.Layout.Dismissed.Select(id => id.ToString()).ToArray(),
                 preview = market != null && market.IsPreview,
-                quoteState = market?.Quote(shell.State.SelectedInstrument.Code).State.ToString(),
-                quoteReason = market?.Quote(shell.State.SelectedInstrument.Code).Reason,
-                chartState = market?.Candles(shell.State.SelectedInstrument.Code).State.ToString(),
-                bookState = market?.Book(shell.State.SelectedInstrument.Code).State.ToString(),
+                quoteState = market?.Quote(code).State.ToString(),
+                quoteReason = market?.Quote(code).Reason,
+                chartState = market?.Daily(code).State.ToString(),
+                bookState = market?.Book(code).State.ToString(),
                 applicationFocused = Application.isFocused,
-                shellFocused = shell.HasInteractionFocus,
                 xrInputFocus = OVRManager.hasInputFocus,
                 activeController = OVRInput.GetActiveController().ToString(),
                 connectedControllers = OVRInput.GetConnectedControllers().ToString(),
@@ -78,7 +78,7 @@ namespace SpatialTrading.Editor
                 leftController = PoseOf(rig.leftHandAnchor),
                 rightController = PoseOf(rig.rightHandAnchor),
                 trackingSpace = PoseOf(rig.trackingSpace),
-                surfaces = Object.FindObjectsByType<SurfaceBounds>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                surfaces = Object.FindObjectsByType<SpreadPanel>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                     .Select(surface => PoseOf(surface.transform)).ToArray(),
                 rays = Object.FindObjectsByType<RayInteractor>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                     .Select(ray => new RaySnapshot
@@ -95,7 +95,7 @@ namespace SpatialTrading.Editor
                         characters = label.textInfo.characterCount,
                         visibleCharacters = label.textInfo.characterInfo.Take(label.textInfo.characterCount).Count(character => character.isVisible)
                     }).FirstOrDefault(),
-                buttons = Object.FindObjectsByType<ShellButton>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                buttons = Object.FindObjectsByType<UnityEngine.UI.Button>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                     .Select(button => new ButtonSnapshot
                     {
                         name = button.name,
@@ -128,11 +128,11 @@ namespace SpatialTrading.Editor
 
         [Serializable] private sealed class Snapshot
         {
-            public string capturedAt, scope, selectedInstrument, secondaryComponent;
-            public long contextRevision;
+            public string capturedAt, scope, selectedInstrument, ticketState, session;
+            public string[] dismissed;
             public bool preview;
             public string quoteState, quoteReason, chartState, bookState;
-            public bool applicationFocused, shellFocused, xrInputFocus;
+            public bool applicationFocused, xrInputFocus;
             public string activeController, connectedControllers;
             public float rightTrigger;
             public PoseSnapshot head, trackingSpace, leftController, rightController;

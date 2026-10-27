@@ -3,12 +3,13 @@ using System.IO;
 using System.Linq;
 using Meta.XR;
 using Oculus.Interaction;
+using Oculus.Interaction.Surfaces;
 using Oculus.Interaction.Editor.QuickActions;
 using Oculus.Interaction.OVR.Editor.QuickActions;
 using SpatialTrading.Components;
-using SpatialTrading.Interfaces;
-using SpatialTrading.Spatial;
+using SpatialTrading.Domain;
 using SpatialTrading.Market;
+using SpatialTrading.Spread;
 using TMPro;
 using UnityEditor;
 using UnityEditor.Build;
@@ -30,13 +31,12 @@ namespace SpatialTrading.Editor
     /// <summary>Repeatable scene authoring using the pinned SDK's public setup APIs.</summary>
     public static class QuestShellProject
     {
-        public const string ScenePath = "Assets/SpatialTrading/Scenes/FocusShell.unity";
+        public const string ScenePath = "Assets/SpatialTrading/Scenes/TraderSpread.unity";
+        private const string ScenesFolder = "Assets/SpatialTrading/Scenes";
         private const string Generated = "Assets/Generated";
+        /// <summary>Editor-visible head pose for authoring only; at runtime the workspace pins itself to the tracked head.</summary>
+        private static readonly Vector3 AuthoringHead = new Vector3(0f, 1.2f, 0f);
         private static TMP_FontAsset _font;
-        private static readonly Color Background = new Color(0.065f, 0.085f, 0.14f, 0.98f);
-        private static readonly Color Ink = new Color(0.91f, 0.96f, 1f);
-        private static readonly Color Muted = new Color(0.57f, 0.72f, 0.78f);
-        private static readonly Color Accent = new Color(0.39f, 0.93f, 0.82f);
 
         [MenuItem("Spatial Trading/1. Configure Quest project")]
         public static void Configure()
@@ -124,7 +124,8 @@ namespace SpatialTrading.Editor
             Debug.Log("[M1] Quest configuration saved. Reopen the editor if Input System requests a restart.");
         }
 
-        [MenuItem("Spatial Trading/2. Generate Focus Shell scene")]
+
+        [MenuItem("Spatial Trading/2. Generate Trader Spread scene")]
         public static void GenerateScene()
         {
             if (Resources.Load<TMP_Settings>("TMP Settings") != null)
@@ -178,10 +179,11 @@ namespace SpatialTrading.Editor
             }
         }
 
+
         private static void GenerateSceneCore()
         {
             // Preserve any scene edited by a person. Regeneration uses a new path after explicit rename/removal.
-            if (File.Exists(ScenePath)) throw new BuildFailedException("FocusShell.unity exists. Open it, or move it aside before regenerating.");
+            if (File.Exists(ScenePath)) throw new BuildFailedException("TraderSpread.unity exists. Open it, or move it aside before regenerating.");
             if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
             EnsureFont();
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -201,67 +203,236 @@ namespace SpatialTrading.Editor
                 camera.farClipPlane = 20;
             }
             var head = rig.centerEyeAnchor;
-            var cameraEye = head.GetComponent<Camera>();
-            var app = new GameObject("Focus Shell");
-            var shell = app.AddComponent<FocusShell>();
-            var layout = app.AddComponent<SeatedLayout>();
+            var eye = head.GetComponent<Camera>();
+
+            var app = new GameObject("Trader Spread");
+            var workspace = app.AddComponent<SpreadWorkspace>();
             var market = app.AddComponent<MarketDataSession>();
-            market.Configure(true); // Explicit design preview; never a fallback from live failures.
-            var sources = app.AddComponent<ShellInputSources>();
-            sources.Configure(rig.transform);
+            market.Configure(false); // live gateway; menu 8 is the explicit synthetic preview, never a fallback
+            var tray = app.AddComponent<PalmTray>();
 
-            var chart = Surface("Chart", 860, 590, head, cameraEye, true, out var chartCanvas);
-            var chartView = chart.AddComponent<ChartComponent>();
-            Label(chartCanvas, "K I W O O M   /   S P A C E", 34, 48, 460, 26, 16, Muted);
-            var sourceLabel = Label(chartCanvas, "PREVIEW  /  합성 시세", 604, 47, 224, 28, 16, Accent);
-            var instrument = Label(chartCanvas, "삼성전자", 32, 89, 796, 56, 40, Ink);
-            var price = Label(chartCanvas, "—", 30, 139, 590, 100, 60, Ink);
-            price.gameObject.name = "Price";
-            var change = Label(chartCanvas, "전일 대비 —", 35, 231, 550, 34, 24, Muted);
-            Card(chartCanvas, "Chart legend", 635, 202, 190, 48, new Color(.06f,.10f,.17f,.94f), 12);
-            Label(chartCanvas, "CANDLE  /  거래량", 650, 212, 165, 26, 17, Muted);
-            Image(chartCanvas, "Divider", 32, 283, 796, 1, new Color(.4f,.55f,.7f,.16f));
-            var period = Label(chartCanvas, "차트", 34, 300, 640, 28, 18, Muted);
-            var candlesObject = Rect("Candles", chartCanvas, 34, 341, 672, 172);
-            var candles = candlesObject.gameObject.AddComponent<CandleChartGraphic>();
-            candles.raycastTarget = false;
-            var high = Label(chartCanvas, "—", 720, 344, 106, 52, 17, Muted);
-            var low = Label(chartCanvas, "—", 720, 450, 106, 52, 17, Muted);
-            var freshness = Label(chartCanvas, "디자인 미리보기 · 실제 시세 아님", 34, 539, 700, 27, 17, Muted);
-            chartView.Configure(instrument, price, candles, change, sourceLabel, freshness, period, high, low);
+            var layout = SpreadLayout.TraderDefault();
+            var panels = ((PanelId[])Enum.GetValues(typeof(PanelId))).Select(id => BuildPanel(id, layout[id], eye)).ToArray();
+            foreach (var panel in panels) panel.Bind(workspace);
+            workspace.Configure(head, eye, market, tray, panels);
+            BuildTray(tray, workspace, eye);
 
-            var secondary = Surface("Secondary Component", 420, 590, head, cameraEye, true, out var secondaryCanvas);
-            var secondaryView = secondary.AddComponent<SecondaryComponent>();
-            Label(secondaryCanvas, "MARKET INSIGHT", 28, 50, 360, 26, 15, Accent);
-            var secondaryTitle = Label(secondaryCanvas, "호가", 28, 85, 360, 45, 33, Ink);
-            Image(secondaryCanvas, "Divider", 28, 143, 364, 1, new Color(.4f,.55f,.7f,.16f));
-            var secondaryBody = Label(secondaryCanvas, "", 28, 164, 364, 314, 24, Ink);
-            secondaryView.Configure(secondaryTitle, secondaryBody);
-            Button(secondaryCanvas, "닫기", 28, 510, 364, 56, shell, ShellControl.CloseSecondary);
-
-            var dock = Surface("Reachable Controls", 650, 270, head, cameraEye, false, out var controls);
-            Button(controls, "삼성전자", 20, 45, 297, 62, shell, ShellControl.SelectSamsung);
-            Button(controls, "SK하이닉스", 333, 45, 297, 62, shell, ShellControl.SelectSkHynix);
-            Button(controls, "차트", 20, 119, 143, 59, shell, ShellControl.OpenChart);
-            Button(controls, "호가", 175, 119, 144, 59, shell, ShellControl.OpenOrderBook);
-            Button(controls, "보유", 331, 119, 144, 59, shell, ShellControl.OpenPosition);
-            Button(controls, "비교", 487, 119, 143, 59, shell, ShellControl.CompareOther);
-            Button(controls, "앞으로 정렬", 20, 190, 185, 55, shell, ShellControl.Recenter);
-            var status = Label(controls, "터치로 선택 · 손잡이로 이동", 224, 198, 403, 38, 18, Muted);
-            layout.Configure(head, chart.transform, dock.transform, secondary.transform);
-            shell.Configure(chartView, secondaryView, layout, sources, status, market);
-
-            // An editor-visible starting pose; runtime places once from actual tracked head position.
-            chart.transform.position = new Vector3(0, 1.1f, 0.95f);
-            dock.transform.SetPositionAndRotation(new Vector3(0, 0.82f, 0.57f), Quaternion.Euler(25, 0, 0));
-            secondary.transform.SetPositionAndRotation(new Vector3(0.61f, 1.04f, 0.78f), Quaternion.Euler(0, 25, 0));
-            secondary.SetActive(false);
+            // TraderSpread replaces the picker shell scene and is the only scene; the old scripts stay until their own cleanup.
+            foreach (var other in OtherScenes())
+                if (!AssetDatabase.DeleteAsset(other)) throw new BuildFailedException("Could not remove " + other);
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             if (!EditorSceneManager.SaveScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene(), ScenePath))
-                throw new BuildFailedException("Could not save Focus Shell scene.");
+                throw new BuildFailedException("Could not save Trader Spread scene.");
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
-            Debug.Log("[M1] Focus Shell scene generated with vendor poke/ray/grab interactors.");
+            Debug.Log("[M1] Trader Spread scene generated: 8 grabbable panels, palm tray, vendor poke/ray/grab interactors.");
+        }
+
+        /// <summary>
+        /// One spread panel: world canvas (1 unit = 1 mm) with poke+ray canvas pointables, backing card, the Task 13
+        /// component, a top grab bar, a full-size body collider (grab volume) behind the canvas, a narrow ray-grab strip on
+        /// the top edge, a kinematic Rigidbody, a one-point Grabbable whose transformer locks pitch and roll, and the
+        /// bottom-right resize handle (its own Grabbable, cyan triangle).
+        /// </summary>
+        private static SpreadPanel BuildPanel(PanelId id, PanelRect rect, Camera eye)
+        {
+            var root = new GameObject("Panel " + id);
+            root.transform.SetPositionAndRotation(AuthoringHead + SpreadWorkspace.LocalCenter(rect), Quaternion.identity);
+            var size = HoloStyle.SizeFor(rect);
+
+            var canvasObject = new GameObject("Surface", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster), typeof(CanvasGroup));
+            canvasObject.transform.SetParent(root.transform, false);
+            var surface = (RectTransform)canvasObject.transform;
+            surface.sizeDelta = size;
+            surface.localScale = Vector3.one * 0.001f;
+            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.worldCamera = eye;
+            // Backing card: a soft dark plate behind the hologram frame so it reads over busy passthrough.
+            Stretch(Card(surface, "Background", new Color(0f, .02f, .03f, .35f), Color.clear, 0f, 10f));
+
+            var holo = new GameObject("Holo " + id, typeof(RectTransform));
+            holo.transform.SetParent(surface, false);
+            ((RectTransform)holo.transform).sizeDelta = size; // centre pivot: resizing grows about the panel centre
+            HoloPanel content;
+            switch (id)
+            {
+                case PanelId.OrderBook: content = holo.AddComponent<OrderBookPanel>(); break;
+                case PanelId.News: content = holo.AddComponent<NewsPanel>(); break;
+                case PanelId.Balance: content = holo.AddComponent<BalancePanel>(); break;
+                case PanelId.Order: content = holo.AddComponent<OrderPanel>(); break;
+                default: content = holo.AddComponent<ChartPanel>(); break;
+            }
+            content.Configure(_font); // fixed children are saved with the scene, so Validate can measure them
+
+            var accent = id == PanelId.Order ? HoloStyle.Amber : HoloStyle.Cyan;
+            var bar = Card(surface, "Grab bar", HoloStyle.Alpha(accent, .55f), Color.clear, 0f, 2.5f);
+            var barRect = bar.rectTransform;
+            barRect.anchorMin = barRect.anchorMax = barRect.pivot = new Vector2(.5f, 1f);
+            barRect.anchoredPosition = new Vector2(0f, -3f);
+            barRect.sizeDelta = new Vector2(90f, 5f);
+
+            root.AddComponent<BoxCollider>();
+            var body = root.AddComponent<Rigidbody>();
+            QuickActionsAPI.AddGrabInteraction(root);
+            QuickActionsAPI.AddRayGrabInteraction(root);
+            ConfigureGrab(root, body);
+            var grabBar = new GameObject("Grab bar").AddComponent<BoxCollider>();
+            grabBar.transform.SetParent(root.transform, false);
+            // Ray grab only on the top strip: elsewhere a ray reaches the canvas buttons first.
+            foreach (var colliderSurface in root.GetComponentsInChildren<ColliderSurface>(true)) colliderSurface.InjectCollider(grabBar);
+
+            var handle = new GameObject("Resize handle");
+            handle.transform.SetParent(root.transform, false);
+            var handleCollider = handle.AddComponent<BoxCollider>();
+            handleCollider.size = new Vector3(SpreadPanel.HandleSize, SpreadPanel.HandleSize, .02f);
+            var handleBody = handle.AddComponent<Rigidbody>();
+            QuickActionsAPI.AddGrabInteraction(handle);
+            QuickActionsAPI.AddRayGrabInteraction(handle);
+            ConfigureGrab(handle, handleBody);
+            var markObject = new GameObject("Handle mark", typeof(RectTransform), typeof(Canvas), typeof(CanvasGroup));
+            markObject.transform.SetParent(handle.transform, false);
+            var markCanvas = markObject.GetComponent<Canvas>();
+            markCanvas.renderMode = RenderMode.WorldSpace;
+            markCanvas.worldCamera = eye;
+            var markRect = (RectTransform)markObject.transform;
+            markRect.sizeDelta = Vector2.one * (SpreadPanel.HandleSize * 1000f);
+            markRect.localScale = Vector3.one * 0.001f;
+            markRect.localPosition = new Vector3(0f, 0f, -.001f);
+            var triangle = new GameObject("Triangle", typeof(RectTransform)).AddComponent<CornerHandleGraphic>();
+            triangle.rectTransform.SetParent(markRect, false);
+            Stretch(triangle);
+            triangle.color = HoloStyle.Alpha(accent, .9f);
+            triangle.raycastTarget = false;
+
+            QuickActionsAPI.AddPokeCanvasInteraction(canvasObject);
+            QuickActionsAPI.AddRayCanvasInteraction(canvasObject);
+
+            var panel = root.AddComponent<SpreadPanel>();
+            panel.Configure(id, null, content, surface, canvasObject.GetComponent<CanvasGroup>(), root.GetComponent<BoxCollider>(),
+                grabBar, root.GetComponent<Grabbable>(), handle.transform, handleCollider, handle.GetComponent<Grabbable>(),
+                markObject.GetComponent<CanvasGroup>());
+            panel.ApplySize(rect);
+            return panel;
+        }
+
+        /// <summary>One-point grab, kinematic, no throw; rotation X and Z locked (pitch and roll stay 0), scale fixed.</summary>
+        private static void ConfigureGrab(GameObject target, Rigidbody body)
+        {
+            body.isKinematic = true;
+            body.useGravity = false;
+            var grabbable = target.GetComponent<Grabbable>();
+            if (grabbable == null) throw new BuildFailedException("SDK did not create Grabbable on " + target.name);
+            var transformer = target.AddComponent<GrabFreeTransformer>();
+            var zero = new TransformerUtils.ConstrainedAxis { ConstrainAxis = true, AxisRange = new TransformerUtils.FloatRange { Min = 0, Max = 0 } };
+            transformer.InjectOptionalRotationConstraints(new TransformerUtils.RotationConstraints
+            { XAxis = zero, YAxis = TransformerUtils.ConstrainedAxis.Unconstrained, ZAxis = zero });
+            var one = new TransformerUtils.ConstrainedAxis { ConstrainAxis = true, AxisRange = new TransformerUtils.FloatRange { Min = 1, Max = 1 } };
+            transformer.InjectOptionalScaleConstraints(new TransformerUtils.ScaleConstraints
+            { ConstraintsAreRelative = true, XAxis = one, YAxis = one, ZAxis = one });
+            grabbable.MaxGrabPoints = 1;
+            grabbable.InjectOptionalOneGrabTransformer(transformer);
+            grabbable.InjectOptionalTwoGrabTransformer(transformer);
+            grabbable.InjectOptionalRigidbody(body);
+            grabbable.InjectOptionalThrowWhenUnselected(false);
+            grabbable.InjectOptionalKinematicWhileSelected(true);
+        }
+
+        /// <summary>The restore tray: a canvas with "기본 배치로" (poke/ray) and one grabbable icon per panel.</summary>
+        private static void BuildTray(PalmTray tray, SpreadWorkspace workspace, Camera eye)
+        {
+            var root = new GameObject("Palm Tray");
+            root.transform.SetPositionAndRotation(AuthoringHead + PalmTray.PinnedOffset, Quaternion.identity);
+            var canvasObject = new GameObject("Tray surface", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+            canvasObject.transform.SetParent(root.transform, false);
+            var surface = (RectTransform)canvasObject.transform;
+            surface.sizeDelta = new Vector2(2 * PalmTray.PadMm + PalmTray.ResetWidthMm, PalmTray.HeightMm);
+            surface.localScale = Vector3.one * 0.001f;
+            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.worldCamera = eye;
+            Stretch(Card(surface, "Background", HoloStyle.PanelFill, HoloStyle.Alpha(HoloStyle.Cyan, .55f), HoloStyle.LineWidth, 12f));
+
+            var resetCard = Card(surface, "Reset", HoloStyle.Alpha(HoloStyle.Cyan, .12f), HoloStyle.Cyan, HoloStyle.LineWidth, 8f);
+            resetCard.raycastTarget = true;
+            var resetRect = resetCard.rectTransform;
+            resetRect.anchorMin = resetRect.anchorMax = resetRect.pivot = new Vector2(.5f, .5f);
+            resetRect.sizeDelta = new Vector2(PalmTray.ResetWidthMm, PalmTray.HeightMm - 2 * PalmTray.PadMm);
+            var button = resetCard.gameObject.AddComponent<Button>();
+            button.targetGraphic = resetCard;
+            button.navigation = new Navigation { mode = Navigation.Mode.None };
+            var resetLabel = Text(resetRect, "Label", "기본 배치로", 20f, HoloStyle.Ink);
+            Stretch(resetLabel);
+            var resetCollider = new GameObject("Reset collider").AddComponent<BoxCollider>();
+            resetCollider.transform.SetParent(root.transform, false);
+            QuickActionsAPI.AddPokeCanvasInteraction(canvasObject);
+            QuickActionsAPI.AddRayCanvasInteraction(canvasObject);
+
+            var icons = new System.Collections.Generic.List<PalmTray.Icon>();
+            foreach (PanelId id in Enum.GetValues(typeof(PanelId)))
+            {
+                var icon = new GameObject("Tray icon " + id);
+                icon.transform.SetParent(root.transform, false);
+                var collider = icon.AddComponent<BoxCollider>();
+                collider.size = new Vector3(PalmTray.IconMm * .001f, PalmTray.IconMm * .001f, .02f);
+                var body = icon.AddComponent<Rigidbody>();
+                QuickActionsAPI.AddGrabInteraction(icon);
+                QuickActionsAPI.AddRayGrabInteraction(icon);
+                ConfigureGrab(icon, body);
+                var face = new GameObject("Icon face", typeof(RectTransform), typeof(Canvas));
+                face.transform.SetParent(icon.transform, false);
+                var faceCanvas = face.GetComponent<Canvas>();
+                faceCanvas.renderMode = RenderMode.WorldSpace;
+                faceCanvas.worldCamera = eye;
+                var faceRect = (RectTransform)face.transform;
+                faceRect.sizeDelta = Vector2.one * PalmTray.IconMm;
+                faceRect.localScale = Vector3.one * 0.001f;
+                Stretch(Card(faceRect, "Icon", new Color(.02f, .09f, .12f, .92f), HoloStyle.Cyan, HoloStyle.LineWidth, 10f));
+                Stretch(Text(faceRect, "Label", PalmTray.Abbreviation(id), 20f, HoloStyle.Ink));
+                icon.SetActive(false);
+                icons.Add(new PalmTray.Icon { Id = id, Root = icon.transform, Collider = collider, Grabbable = icon.GetComponent<Grabbable>() });
+            }
+            tray.Configure(workspace, root.transform, surface, resetRect, button, resetCollider, icons.ToArray());
+            root.SetActive(false);
+        }
+
+        private static SpatialCardGraphic Card(Transform parent, string name, Color fill, Color edge, float edgeWidth, float radius)
+        {
+            var graphic = new GameObject(name, typeof(RectTransform)).AddComponent<SpatialCardGraphic>();
+            graphic.rectTransform.SetParent(parent, false);
+            graphic.color = fill;
+            graphic.BottomColor = new Color(fill.r * .55f, fill.g * .55f, fill.b * .6f, fill.a);
+            graphic.EdgeColor = edge;
+            graphic.EdgeWidth = edgeWidth;
+            graphic.Radius = radius;
+            graphic.raycastTarget = false;
+            return graphic;
+        }
+
+        private static TextMeshProUGUI Text(Transform parent, string name, string text, float size, Color color)
+        {
+            var label = new GameObject(name, typeof(RectTransform)).AddComponent<TextMeshProUGUI>();
+            label.rectTransform.SetParent(parent, false);
+            label.font = _font;
+            label.fontSize = Mathf.Max(size, HoloStyle.MinText);
+            label.enableAutoSizing = false;
+            label.color = color;
+            label.text = text;
+            label.richText = false;
+            label.raycastTarget = false;
+            label.alignment = TextAlignmentOptions.Center;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Overflow;
+            return label;
+        }
+
+        private static void Stretch(Graphic graphic)
+        {
+            var r = graphic.rectTransform;
+            r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one; r.pivot = new Vector2(.5f, .5f);
+            r.offsetMin = r.offsetMax = Vector2.zero;
+            r.SetAsFirstSibling();
+            if (graphic is TMP_Text) r.SetAsLastSibling();
         }
 
         [MenuItem("Spatial Trading/7. Connect to local gateway")]
@@ -280,9 +451,9 @@ namespace SpatialTrading.Editor
         public static void UsePreview() => SetPreview(true);
         private static void SetPreview(bool preview)
         {
-            var shell = Object.FindFirstObjectByType<FocusShell>();
-            if (shell == null) throw new BuildFailedException("Open the Focus Shell scene first.");
-            if (Application.isPlaying) shell.SetPreview(preview);
+            var workspace = Object.FindFirstObjectByType<SpreadWorkspace>();
+            if (workspace == null) throw new BuildFailedException("Open the Trader Spread scene first.");
+            if (Application.isPlaying) workspace.SetPreview(preview);
             else
             {
                 var market = Object.FindFirstObjectByType<MarketDataSession>();
@@ -293,140 +464,11 @@ namespace SpatialTrading.Editor
             }
         }
 
-        private static GameObject Surface(string name, float width, float height, Transform head, Camera eye,
-            bool resizable, out RectTransform canvasTransform)
-        {
-            var root = new GameObject(name);
-            var canvasObject = new GameObject("Surface", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
-            canvasObject.transform.SetParent(root.transform, false);
-            canvasTransform = canvasObject.GetComponent<RectTransform>();
-            canvasTransform.sizeDelta = new Vector2(width, height);
-            canvasTransform.localScale = Vector3.one * 0.001f;
-            var canvas = canvasObject.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.WorldSpace;
-            canvas.worldCamera = eye;
-            Card(canvasTransform, "Background", 0, 0, width, height, Background, 24);
-            Card(canvasTransform, "Grab handle", width / 2 - 45, 14, 90, 5, new Color(.4f,.58f,.68f,.6f), 2);
-            var hint = Label(canvasTransform, resizable ? "MOVE / RESIZE" : "CONTROL", width - 158, 8, 128, 22, 11, Muted);
-            hint.alignment = TextAlignmentOptions.Right;
-            var collider = root.AddComponent<BoxCollider>();
-            collider.center = new Vector3(0, (height / 2 - 18.5f) * 0.001f, 0);
-            collider.size = new Vector3(width * 0.001f, 0.037f, 0.025f);
-            var body = root.AddComponent<Rigidbody>();
-            body.isKinematic = true;
-            body.useGravity = false;
-            QuickActionsAPI.AddGrabInteraction(root);
-            QuickActionsAPI.AddRayGrabInteraction(root);
-            var grabbable = root.GetComponent<Grabbable>();
-            if (grabbable == null) throw new BuildFailedException("SDK did not create Grabbable.");
-            var transformer = root.AddComponent<GrabFreeTransformer>();
-            var axis = new TransformerUtils.ConstrainedAxis
-            {
-                ConstrainAxis = true,
-                AxisRange = new TransformerUtils.FloatRange { Min = resizable ? 0.85f : 1, Max = resizable ? 1.35f : 1 }
-            };
-            transformer.InjectOptionalScaleConstraints(new TransformerUtils.ScaleConstraints
-            { ConstraintsAreRelative = true, XAxis = axis, YAxis = axis, ZAxis = axis });
-            grabbable.MaxGrabPoints = 2;
-            grabbable.InjectOptionalOneGrabTransformer(transformer);
-            grabbable.InjectOptionalTwoGrabTransformer(transformer);
-            grabbable.InjectOptionalRigidbody(body);
-            grabbable.InjectOptionalThrowWhenUnselected(false);
-            grabbable.InjectOptionalKinematicWhileSelected(true);
-            root.AddComponent<SurfaceBounds>().Configure(head);
-            QuickActionsAPI.AddPokeCanvasInteraction(canvasObject);
-            QuickActionsAPI.AddRayCanvasInteraction(canvasObject);
-            return root;
-        }
-
-        private static RectTransform Rect(string name, Transform parent, float x, float y, float width, float height)
-        {
-            var rect = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
-            rect.SetParent(parent, false);
-            rect.anchorMin = rect.anchorMax = new Vector2(0, 1);
-            rect.pivot = new Vector2(0, 1);
-            rect.anchoredPosition = new Vector2(x, -y);
-            rect.sizeDelta = new Vector2(width, height);
-            return rect;
-        }
-
-        private static Image Image(Transform parent, string name, float x, float y, float w, float h, Color color)
-        {
-            var graphic = Rect(name, parent, x, y, w, h).gameObject.AddComponent<Image>();
-            graphic.color = color;
-            graphic.raycastTarget = false;
-            return graphic;
-        }
-
-        private static SpatialCardGraphic Card(Transform parent, string name, float x, float y, float w, float h, Color color, float radius)
-        {
-            var graphic = Rect(name, parent, x, y, w, h).gameObject.AddComponent<SpatialCardGraphic>();
-            graphic.color = color;
-            graphic.BottomColor = new Color(color.r * .65f, color.g * .65f, color.b * .72f, color.a);
-            graphic.Radius = radius;
-            graphic.raycastTarget = false;
-            return graphic;
-        }
-
-        private static TMP_Text Label(Transform parent, string text, float x, float y, float w, float h, float size, Color color)
-        {
-            var label = Rect("Label", parent, x, y, w, h).gameObject.AddComponent<TextMeshProUGUI>();
-            label.font = _font;
-            label.fontSize = size;
-            // Noto KR line metrics are taller than Latin defaults. Fit the whole line
-            // within its authored rectangle instead of silently ellipsizing it away.
-            label.enableAutoSizing = true;
-            label.fontSizeMin = size * 0.8f;
-            label.fontSizeMax = size;
-            label.color = color;
-            label.text = text;
-            label.raycastTarget = false;
-            label.overflowMode = TextOverflowModes.Ellipsis;
-            label.textWrappingMode = TextWrappingModes.Normal;
-            label.alignment = TextAlignmentOptions.TopLeft;
-            return label;
-        }
-
-        private static void Button(Transform parent, string text, float x, float y, float w, float h, FocusShell shell, ShellControl control)
-        {
-            var image = Card(parent, control.ToString(), x, y, w, h, new Color(0.11f, 0.17f, 0.25f), 14);
-            image.raycastTarget = true;
-            var button = image.gameObject.AddComponent<ShellButton>();
-            button.targetGraphic = image;
-            button.Configure(shell, control);
-            var colors = button.colors;
-            colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(0.70f, 1, 0.91f);
-            colors.pressedColor = new Color(0.42f, 0.75f, 0.66f);
-            button.colors = colors;
-            button.navigation = new Navigation { mode = Navigation.Mode.None };
-            var label = Label(image.transform, text, 8, 0, w - 16, h, 24, Ink);
-            label.alignment = TextAlignmentOptions.Center;
-        }
-
-        private static void EnsureFont()
-        {
-            Directory.CreateDirectory(Generated);
-            AssetDatabase.Refresh();
-            if (Resources.Load<TMP_Settings>("TMP Settings") == null)
-                throw new BuildFailedException("TMP Essential Resources settings were not imported.");
-            const string fontPath = Generated + "/NotoSansKR.asset";
-            _font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(fontPath);
-            if (_font != null) return;
-            var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/SpatialTrading/Fonts/NotoSansKR-Regular.otf");
-            if (source == null) throw new BuildFailedException("Korean font source missing.");
-            _font = TMP_FontAsset.CreateFontAsset(source, 48, 6, GlyphRenderMode.SDFAA, 2048, 2048, AtlasPopulationMode.Dynamic, true);
-            _font.name = "NotoSansKR Shell";
-            AssetDatabase.CreateAsset(_font, fontPath);
-            AssetDatabase.AddObjectToAsset(_font.material, _font);
-            foreach (var atlas in _font.atlasTextures) AssetDatabase.AddObjectToAsset(atlas, _font);
-            AssetDatabase.SaveAssets();
-        }
-
         [MenuItem("Spatial Trading/3. Validate scene and build configuration")]
         public static void Validate()
         {
-            if (!File.Exists(ScenePath)) throw new BuildFailedException("Generate Focus Shell scene first.");
+            if (!File.Exists(ScenePath)) throw new BuildFailedException("Generate Trader Spread scene first.");
+            if (OtherScenes().Length > 0) throw new BuildFailedException("TraderSpread must be the only scene; remove " + string.Join(", ", OtherScenes()));
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new BuildFailedException("Leave Play Mode before validating or building.");
             // Opening a scene in Single mode can discard unsaved edits. Never do that as a side
@@ -436,9 +478,13 @@ namespace SpatialTrading.Editor
                     throw new BuildFailedException("Save your open scene changes before validating or building.");
             if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().path != ScenePath)
                 EditorSceneManager.OpenScene(ScenePath);
+            if (EditorBuildSettings.scenes.Length != 1 || EditorBuildSettings.scenes[0].path != ScenePath || !EditorBuildSettings.scenes[0].enabled)
+                throw new BuildFailedException("TraderSpread.unity must be the only scene in build settings.");
             var rig = Object.FindFirstObjectByType<OVRCameraRig>();
-            if (rig == null || Object.FindObjectsByType<FocusShell>(FindObjectsSortMode.None).Length != 1)
-                throw new BuildFailedException("Expected one FocusShell and an OVRCameraRig.");
+            if (rig == null || Object.FindObjectsByType<SpreadWorkspace>(FindObjectsSortMode.None).Length != 1 ||
+                Object.FindObjectsByType<MarketDataSession>(FindObjectsSortMode.None).Length != 1 ||
+                Object.FindObjectsByType<PalmTray>(FindObjectsSortMode.None).Length != 1)
+                throw new BuildFailedException("Expected one SpreadWorkspace, MarketDataSession, PalmTray and an OVRCameraRig.");
             var manager = rig.GetComponent<OVRManager>();
             var passthrough = rig.GetComponent<OVRPassthroughLayer>();
             if (manager == null || !manager.isInsightPassthroughEnabled || passthrough == null ||
@@ -464,21 +510,29 @@ namespace SpatialTrading.Editor
             if (PlayerSettings.Android.targetArchitectures != AndroidArchitecture.ARM64 ||
                 PlayerSettings.GetScriptingBackend(NamedBuildTarget.Android) != ScriptingImplementation.IL2CPP)
                 throw new BuildFailedException("Android must use ARM64 IL2CPP.");
-            var surfaces = Object.FindObjectsByType<SurfaceBounds>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            if (surfaces.Length != 3) throw new BuildFailedException("Expected chart, controls and secondary surfaces.");
-            foreach (var surface in surfaces)
+
+            var panels = Object.FindObjectsByType<SpreadPanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (panels.Length != 8) throw new BuildFailedException("Expected 8 SpreadPanels, found " + panels.Length + ".");
+            foreach (PanelId id in Enum.GetValues(typeof(PanelId)))
+                if (panels.Count(p => p.Id == id) != 1) throw new BuildFailedException("Expected exactly one panel for " + id + ".");
+            foreach (var panel in panels)
             {
-                var canvas = surface.GetComponentInChildren<Canvas>(true);
-                if (canvas == null || canvas.renderMode != RenderMode.WorldSpace || canvas.worldCamera == null ||
-                    canvas.GetComponent<GraphicRaycaster>() == null)
-                    throw new BuildFailedException("Invalid world-space canvas on " + surface.name);
+                if (panel.Content == null || panel.Handle == null) throw new BuildFailedException("Unbound SpreadPanel " + panel.name);
+                if (!Flat(panel.transform.rotation) || !Flat(panel.GetComponentInChildren<Canvas>(true).transform.rotation))
+                    throw new BuildFailedException("Panel " + panel.name + " is pitched or rolled; spread panels are flat and front-facing.");
+                var canvas = panel.GetComponentInChildren<Canvas>(true);
+                if (canvas.renderMode != RenderMode.WorldSpace || canvas.worldCamera == null || canvas.GetComponent<GraphicRaycaster>() == null)
+                    throw new BuildFailedException("Invalid world-space canvas on " + panel.name);
                 if (canvas.GetComponentsInChildren<PointableCanvas>(true).Length != 2 ||
                     canvas.GetComponentsInChildren<PokeInteractable>(true).Length == 0 ||
                     canvas.GetComponentsInChildren<RayInteractable>(true).Length == 0)
-                    throw new BuildFailedException("Missing poke/ray canvas bindings on " + surface.name);
-                if (surface.GetComponent<Grabbable>() == null || surface.GetComponent<GrabFreeTransformer>() == null ||
-                    surface.GetComponent<Rigidbody>()?.isKinematic != true || surface.GetComponent<BoxCollider>() == null)
-                    throw new BuildFailedException("Missing standard grab/resize setup on " + surface.name);
+                    throw new BuildFailedException("Missing poke/ray canvas bindings on " + panel.name);
+                if (panel.GetComponent<Grabbable>() == null || panel.GetComponent<GrabFreeTransformer>() == null ||
+                    panel.GetComponent<Rigidbody>()?.isKinematic != true || panel.GetComponent<BoxCollider>() == null ||
+                    panel.GetComponent<Grabbable>().MaxGrabPoints != 1)
+                    throw new BuildFailedException("Missing standard grab setup on " + panel.name);
+                if (panel.Handle.GetComponent<Grabbable>() == null || panel.Handle.GetComponent<GrabFreeTransformer>() == null)
+                    throw new BuildFailedException("Missing resize handle grab on " + panel.name);
             }
             if (Object.FindObjectsByType<PointableCanvasModule>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length != 1)
                 throw new BuildFailedException("Expected exactly one SDK PointableCanvasModule.");
@@ -488,11 +542,49 @@ namespace SpatialTrading.Editor
                     if (GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(transform.gameObject) > 0)
                         throw new BuildFailedException("Missing script on " + transform.name);
                     foreach (var label in transform.GetComponents<TMP_Text>())
+                    {
                         if (label.font == null) throw new BuildFailedException("Missing font on " + transform.name);
+                        if (label.fontSize < HoloStyle.MinText || (label.enableAutoSizing && label.fontSizeMin < HoloStyle.MinText))
+                            throw new BuildFailedException("Text below " + HoloStyle.MinText + " on " + transform.name);
+                        var number = label.name.Contains("Price") || label.name.Contains("Qty");
+                        if (number && (label.fontSize < HoloStyle.MinNumber || (label.enableAutoSizing && label.fontSizeMin < HoloStyle.MinNumber)))
+                            throw new BuildFailedException("Price/quantity text below " + HoloStyle.MinNumber + " on " + transform.name);
+                    }
                 }
             if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().isDirty)
                 throw new BuildFailedException("Scene setup changed while loading. Review/save it, then validate again.");
             Debug.Log("[M1] Static scene/build validation passed. This does not validate headset behavior.");
+        }
+
+        private static string[] OtherScenes() =>
+            Directory.Exists(ScenesFolder)
+                ? Directory.GetFiles(ScenesFolder, "*.unity").Select(p => p.Replace('\\', '/')).Where(p => p != ScenePath).ToArray()
+                : new string[0];
+
+        /// <summary>Pitch and roll are exactly zero (yaw is free).</summary>
+        private static bool Flat(Quaternion rotation)
+        {
+            var e = rotation.eulerAngles;
+            return Mathf.Abs(Mathf.DeltaAngle(0f, e.x)) < 1e-3f && Mathf.Abs(Mathf.DeltaAngle(0f, e.z)) < 1e-3f;
+        }
+
+        private static void EnsureFont()
+        {
+            Directory.CreateDirectory(Generated);
+            AssetDatabase.Refresh();
+            if (Resources.Load<TMP_Settings>("TMP Settings") == null)
+                throw new BuildFailedException("TMP Essential Resources settings were not imported.");
+            const string fontPath = Generated + "/NotoSansKR.asset";
+            _font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(fontPath);
+            if (_font != null) return;
+            var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/SpatialTrading/Fonts/NotoSansKR-Regular.otf");
+            if (source == null) throw new BuildFailedException("Korean font source missing.");
+            _font = TMP_FontAsset.CreateFontAsset(source, 48, 6, GlyphRenderMode.SDFAA, 2048, 2048, AtlasPopulationMode.Dynamic, true);
+            _font.name = "NotoSansKR Shell";
+            AssetDatabase.CreateAsset(_font, fontPath);
+            AssetDatabase.AddObjectToAsset(_font.material, _font);
+            foreach (var atlas in _font.atlasTextures) AssetDatabase.AddObjectToAsset(atlas, _font);
+            AssetDatabase.SaveAssets();
         }
 
         [MenuItem("Spatial Trading/4. Build Quest APK")]

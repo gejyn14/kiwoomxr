@@ -71,14 +71,27 @@ namespace SpatialTrading.Components
             y += TitleRowH;
             _status.text = view.Status;
             var hasHint = !string.IsNullOrEmpty(view.Hint);
+            var hint = hasHint ? view.Hint.Replace('\n', ' ') : string.Empty;
             var statusW = hasHint ? Mathf.Min(Holo.Width(_status, view.Status) + 4f, inner * .6f) : inner;
-            Holo.Place(_status, Pad, y, statusW, StatusRowH);
             Holo.Show(_hint, hasHint);
-            if (hasHint)
+            if (hasHint && Holo.Width(_hint, hint) + 4f > inner - statusW - 12f)
             {
-                Holo.Place(_hint, Pad + statusW + 12f, y, inner - statusW - 12f, StatusRowH);
-                _hint.text = view.Hint.Replace('\n', ' ');
+                // The hint does not fit beside the status: give it its own line rather than cut it off.
+                Holo.Place(_status, Pad, y, inner, StatusRowH);
+                y += StatusRowH;
+                Holo.Place(_hint, Pad, y, inner, StatusRowH);
+                _hint.alignment = TextAlignmentOptions.MidlineLeft;
             }
+            else
+            {
+                Holo.Place(_status, Pad, y, statusW, StatusRowH);
+                if (hasHint)
+                {
+                    Holo.Place(_hint, Pad + statusW + 12f, y, inner - statusW - 12f, StatusRowH);
+                    _hint.alignment = TextAlignmentOptions.MidlineRight;
+                }
+            }
+            _hint.text = hint;
             y += StatusRowH + 1f;
             Rule(w, y);
             y += 4f;
