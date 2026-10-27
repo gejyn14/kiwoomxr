@@ -205,9 +205,10 @@ def test_holding_name_must_not_be_empty():
     from pydantic import ValidationError
 
     from spatial_gateway.models import Holding
-    with pytest.raises(ValidationError):
-        Holding(code="005930", name="", quantity=1, average_price=None, current_price=None, profit=None,
-                profit_rate=None)
+    for blank in ("", "   "):  # the Unity decoder rejects a blank name and would drop the whole balance
+        with pytest.raises(ValidationError):
+            Holding(code="005930", name=blank, quantity=1, average_price=None, current_price=None, profit=None,
+                    profit_rate=None)
 
 
 async def test_balance_reads_disconnected_once_the_last_refresh_is_older_than_three_polls():
