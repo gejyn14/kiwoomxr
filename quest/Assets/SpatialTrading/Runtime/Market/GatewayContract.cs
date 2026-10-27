@@ -96,15 +96,15 @@ namespace SpatialTrading.Market
             return result;
         }
 
-        private static JObject Object(JToken token, params string[] names)
+        internal static JObject Object(JToken token, params string[] names)
         {
             if (!(token is JObject obj) || obj.Count != names.Length) throw Invalid();
             foreach (var name in names) Required(obj, name);
             return obj;
         }
-        private static JToken Required(JObject obj, string name) => obj.TryGetValue(name, StringComparison.Ordinal, out var token) ? token : throw Invalid();
+        internal static JToken Required(JObject obj, string name) => obj.TryGetValue(name, StringComparison.Ordinal, out var token) ? token : throw Invalid();
         private static JArray Array(JObject obj, string name) => Required(obj, name) is JArray array ? array : throw Invalid();
-        private static string Text(JObject obj, string name, bool nullable = false)
+        internal static string Text(JObject obj, string name, bool nullable = false)
         {
             var token = Required(obj, name);
             if (nullable && token.Type == JTokenType.Null) return null;
@@ -135,6 +135,6 @@ namespace SpatialTrading.Market
                 !DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)) throw Invalid();
             return time;
         }
-        private static FormatException Invalid() => new FormatException("INVALID_FINANCIAL_CONTRACT");
+        internal static FormatException Invalid() => new FormatException("INVALID_FINANCIAL_CONTRACT");
     }
 }
