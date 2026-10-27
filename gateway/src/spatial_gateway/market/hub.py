@@ -18,6 +18,8 @@ from spatial_gateway.models import (
     BookLevel, Candle, CandleSeries, DataState, Observation, OrderBook, Origin, Quote,
 )
 
+from .charts import ChartStore
+from .observe import observe
 from .session import Market, active_market
 
 log = logging.getLogger(__name__)
@@ -92,12 +94,14 @@ def _check(bars: list[_Bar]) -> None:
 
 
 class MarketHub:
-    def __init__(self, clock: Callable[[], datetime], max_bars: int = 240, *, watch_codes: Sequence[str] = ()):
+    def __init__(self, clock: Callable[[], datetime], max_bars: int = 240, *, watch_codes: Sequence[str] = (),
+                 index_codes: Sequence[str] = ()):
         self._clock = clock
         self._max_bars = max_bars
         self._states: dict[tuple[str, Market], _State] = {}
         self._subscribers: list[asyncio.Queue[str]] = []
         self._watched = frozenset(watch_codes)
+        self.charts = ChartStore(clock, watch_codes=watch_codes, index_codes=index_codes)
         self._connected = False
         self._reason: str | None = "KIWOOM_CONNECTING"
 
@@ -159,6 +163,7 @@ class MarketHub:
         try:
             if isinstance(event, Trade):
                 changed = self._apply_trade(event)
+                changed = self.charts.apply_trade(event) or changed
             elif isinstance(event, Book):
                 changed = self._apply_book(event)
             else:
@@ -240,17 +245,9 @@ class MarketHub:
                 received_at=received, source_at=source, reason=reason, correlation_id=correlation_id)
 
         def one(model, value, received, source):
-            if code not in self._watched and not any(k[0] == code for k in self._states):
-                return empty(model, DataState.UNAVAILABLE, "NOT_SUBSCRIBED")
-            if not self._connected:
-                return empty(model, DataState.DISCONNECTED, self._reason, value, received, source)
-            if value is None:
-                return empty(model, DataState.UNAVAILABLE, "MARKET_CLOSED") if closed else empty(model, DataState.LOADING, None)
-            if closed:
-                return empty(model, DataState.DELAYED, "MARKET_CLOSED", value, received, source)
-            return Observation[model](
-                instrument_code=code, state=DataState.LIVE, origin=Origin.KIWOOM, value=value,
-                received_at=received, source_at=source, correlation_id=correlation_id)
+            watched = code in self._watched or any(k[0] == code for k in self._states)
+            return observe(model, code, correlation_id, value=value, received=received, source=source,
+                           connected=self._connected, reason=self._reason, closed=closed, watched=watched)
 
         if market is None:  # a broken link must not read as an ordinary close
             state, reason = (DataState.UNAVAILABLE, "MARKET_CLOSED") if self._connected else (DataState.DISCONNECTED, self._reason)
