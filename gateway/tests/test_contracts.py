@@ -7,10 +7,20 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from spatial_gateway.app import create_app
-from spatial_gateway.capabilities import HubMarket
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.market.hub import MarketHub
+from spatial_gateway.settings import Settings
 from spatial_gateway.models import Candle, CandleSeries, DataState, Observation, Origin, Quote
+
+
+TOKEN = "t" * 40
+SETTINGS = Settings("ak", "sk", TOKEN, ("005930",), ("127.0.0.1", "localhost"))
+AUTH = {"X-Pairing-Token": TOKEN}
+
+
+def make_client(hub=None):
+    hub = hub or MarketHub(lambda: datetime(2026, 10, 27, 10, 0, tzinfo=KST), watch_codes=())
+    return TestClient(create_app(SETTINGS, hub=hub, start_broker=False))
 
 
 def test_missing_values_are_null_and_decimal_wire_is_exact():
@@ -48,8 +58,8 @@ def test_live_requires_authoritative_source_time(origin, source_at):
 def test_untracked_code_cannot_produce_financial_values_or_read_credentials(capability, monkeypatch):
     monkeypatch.setenv("KIWOOM_APPKEY", "must-not-be-read-or-reflected")
     correlation_id = str(uuid4())
-    with TestClient(create_app(HubMarket(MarketHub(lambda: datetime(2026, 10, 27, 10, 0, tzinfo=KST))))) as client:
-        response = client.get(f"/v1/market/005930/{capability}", headers={"X-Correlation-ID": correlation_id})
+    with make_client() as client:
+        response = client.get(f"/v1/market/005930/{capability}", headers={**AUTH, "X-Correlation-ID": correlation_id})
     assert response.status_code == 200
     data = response.json()
     assert data["state"] == "UNAVAILABLE"
@@ -61,16 +71,16 @@ def test_untracked_code_cannot_produce_financial_values_or_read_credentials(capa
 
 
 def test_unknown_instrument_format_and_untrusted_host_rejected():
-    with TestClient(create_app()) as client:
-        assert client.get("/v1/market/not-a-code/quote").status_code == 422
+    with make_client() as client:
+        assert client.get("/v1/market/not-a-code/quote", headers=AUTH).status_code == 422
         assert client.get("/health", headers={"Host": "untrusted.example"}).status_code == 400
         assert client.post("/v1/orders", json={"execute": True}).status_code == 404
         assert client.post("/v1/confirm_order").status_code == 404
 
 
 def test_validation_error_does_not_echo_untrusted_input():
-    with TestClient(create_app()) as client:
-        response = client.get("/v1/market/005930/quote", headers={"X-Correlation-ID": "sensitive-input"})
+    with make_client() as client:
+        response = client.get("/v1/market/005930/quote", headers={**AUTH, "X-Correlation-ID": "sensitive-input"})
     assert response.status_code == 422
     assert response.json() == {"error": "INVALID_REQUEST"}
 

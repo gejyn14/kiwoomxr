@@ -112,6 +112,10 @@ class MarketHub:
                 queue.get_nowait()
             queue.put_nowait(code)
 
+    @property
+    def connection(self) -> tuple[bool, str | None]:
+        return self._connected, self._reason
+
     # -- writes ------------------------------------------------------------
     def set_connection(self, connected: bool, reason: str | None) -> None:
         self._connected = connected
