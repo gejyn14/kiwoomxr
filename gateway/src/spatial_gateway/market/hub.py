@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from spatial_gateway.kiwoom.realtime import Book, Trade
+from spatial_gateway.kiwoom.realtime import AccountEvent, Book, IndexTick, Trade
 from spatial_gateway.kiwoom.rest import MinuteBar
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.models import (
@@ -95,8 +95,9 @@ def _check(bars: list[_Bar]) -> None:
 
 class MarketHub:
     def __init__(self, clock: Callable[[], datetime], max_bars: int = 240, *, watch_codes: Sequence[str] = (),
-                 index_codes: Sequence[str] = ()):
+                 index_codes: Sequence[str] = (), on_account: Callable[[], None] | None = None):
         self._clock = clock
+        self._on_account = on_account
         self._max_bars = max_bars
         self._states: dict[tuple[str, Market], _State] = {}
         self._subscribers: list[asyncio.Queue[str]] = []
@@ -159,8 +160,16 @@ class MarketHub:
         self._states[(code, market)] = state
         self._notify(code)
 
-    def apply(self, event: Trade | Book) -> None:
+    def apply(self, event: Trade | Book | IndexTick | AccountEvent) -> None:
         try:
+            if isinstance(event, AccountEvent):
+                if self._on_account is not None:
+                    self._on_account()
+                return
+            if isinstance(event, IndexTick):
+                if self.charts.apply_index(event.code, event.price, event.change, event.change_percent, event.at):
+                    self._notify(event.code)
+                return
             if isinstance(event, Trade):
                 changed = self._apply_trade(event)
                 changed = self.charts.apply_trade(event) or changed

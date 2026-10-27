@@ -79,3 +79,17 @@ def kst_datetime(yyyymmddhhmmss: str) -> datetime | None:
         return datetime.strptime(yyyymmddhhmmss, "%Y%m%d%H%M%S").replace(tzinfo=KST)
     except ValueError:
         return None
+
+
+_INDEX_SCALE = Decimal(100)
+
+
+def index_value(raw: str | None, *, absolute: bool) -> Decimal | None:
+    """Kiwoom index level or change. Integer strings are 100x ("563834" = 5638.34); strings with a
+    decimal point are already scaled. Shared by REST and realtime so they agree."""
+    if raw is None:
+        return None
+    value = price(raw) if absolute else signed(raw)
+    if value is None:
+        return None
+    return value if "." in raw else value / _INDEX_SCALE

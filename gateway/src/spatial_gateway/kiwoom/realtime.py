@@ -51,6 +51,21 @@ class Book:
     at: datetime
 
 
+@dataclass(frozen=True)
+class IndexTick:
+    code: str
+    price: Decimal
+    change: Decimal | None
+    change_percent: Decimal | None
+    at: datetime
+
+
+@dataclass(frozen=True)
+class AccountEvent:
+    """Balance changed. Carries no account data; the account number field is never read."""
+    at: datetime
+
+
 def _field(values: dict, key: str) -> str | None:
     raw = values.get(key)
     return raw if isinstance(raw, str) else None
@@ -68,14 +83,24 @@ def _levels(values: dict, price_start: int, qty_start: int):
     )
 
 
-def _parse_entry(entry: Any, today: date) -> Trade | Book | None:
+def _parse_entry(entry: Any, today: date, now: datetime | None = None) -> Trade | Book | IndexTick | AccountEvent | None:
     if not isinstance(entry, dict):
         return None
     kind, item, values = entry.get("type"), entry.get("item"), entry.get("values")
     if isinstance(values, list) and len(values) == 1:
         values = values[0]
-    if not isinstance(item, str) or not isinstance(values, dict) or kind not in ("0B", "0D"):
+    if kind == "04":
+        at = _time(values, "908", today) if isinstance(values, dict) else None
+        return AccountEvent(at or now or datetime(today.year, today.month, today.day, tzinfo=v.KST))
+    if not isinstance(item, str) or not isinstance(values, dict) or kind not in ("0B", "0D", "0J"):
         return None
+    if kind == "0J":
+        at = _time(values, "20", today)
+        price = v.index_value(_field(values, "10"), absolute=True)
+        if at is None or price is None:
+            return None
+        return IndexTick(item, price, v.index_value(_field(values, "11"), absolute=False),
+                         v.signed(_field(values, "12")), at)
     if item.endswith(_NX):
         code, market = item[: -len(_NX)], Market.NXT
     else:
@@ -95,13 +120,13 @@ def _parse_entry(entry: Any, today: date) -> Trade | Book | None:
     return Book(code, market, _levels(values, 41, 61), _levels(values, 51, 71), at)
 
 
-def parse_real_frame(frame: dict, today: date) -> list[Trade | Book]:
+def parse_real_frame(frame: dict, today: date, now: datetime | None = None) -> list[Trade | Book | IndexTick | AccountEvent]:
     if not isinstance(frame, dict) or frame.get("trnm") != "REAL":
         return []
     data = frame.get("data")
     if not isinstance(data, list):
         return []
-    parsed = (_parse_entry(entry, today) for entry in data)
+    parsed = (_parse_entry(entry, today, now) for entry in data)
     return [event for event in parsed if event is not None]
 
 
@@ -131,9 +156,10 @@ class KiwoomRealtime:
         self,
         settings: Settings,
         tokens: Any,
-        on_event: Callable[[Trade | Book], None],
+        on_event: Callable[[Trade | Book | IndexTick | AccountEvent], None],
         on_state: Callable[[bool, str | None], None],
         *,
+        index_codes: Sequence[str] = (),
         connect: Callable[..., Any] = websockets.connect,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], datetime] = lambda: datetime.now(v.KST),
@@ -145,6 +171,7 @@ class KiwoomRealtime:
         self._idle_timeout = idle_timeout
         self._closed_idle_timeout = closed_idle_timeout
         self._settings = settings
+        self._index_codes = tuple(index_codes)
         self._tokens = tokens
         self._on_event = on_event
         self._on_state = on_state
@@ -155,11 +182,16 @@ class KiwoomRealtime:
         self._registered_at: datetime | None = None
 
     @staticmethod
-    def register_message(codes: Sequence[str]) -> dict:
+    def register_message(codes: Sequence[str], index_codes: Sequence[str] = ()) -> dict:
         items: list[str] = []
         for code in codes:
             items += [realtime_item(code, Market.KRX), realtime_item(code, Market.NXT)]
-        return {"trnm": "REG", "grp_no": "1", "refresh": "1", "data": [{"item": items, "type": ["0B", "0D"]}]}
+        data = [
+            {"item": items, "type": ["0B", "0D"]},
+            {"item": list(index_codes), "type": ["0J"]},
+            {"item": [""], "type": ["04"]},
+        ]
+        return {"trnm": "REG", "grp_no": "1", "refresh": "1", "data": data}
 
     def _state(self, ok: bool, reason: str | None) -> None:
         try:
@@ -220,7 +252,7 @@ class KiwoomRealtime:
                 if code == _AUTH_CODE or str(_AUTH_CODE) in str(ack.get("return_msg", "")):
                     await self._tokens.invalidate()
                 raise _AuthFailed
-            await ws.send(json.dumps(self.register_message(self._settings.watch_codes)))
+            await ws.send(json.dumps(self.register_message(self._settings.watch_codes, self._index_codes)))
             async with asyncio.timeout(self._ack_timeout):
                 ack = await self._recv_ack(ws, "REG", buffer)
             if ack.get("return_code") != 0:
@@ -246,7 +278,8 @@ class KiwoomRealtime:
 
     def _emit(self, frame: dict) -> None:
         try:
-            events = parse_real_frame(frame, self._clock().astimezone(v.KST).date())
+            now = self._clock().astimezone(v.KST)
+            events = parse_real_frame(frame, now.date(), now)
         except Exception as error:  # drop this frame only; the session keeps reading
             _log.warning("realtime frame dropped: %s", type(error).__name__)
             return

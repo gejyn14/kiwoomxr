@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from spatial_gateway.capabilities import HubMarket
-from spatial_gateway.kiwoom.realtime import Book, Trade
+from spatial_gateway.kiwoom.realtime import AccountEvent, Book, IndexTick, Trade
 from spatial_gateway.kiwoom.rest import MinuteBar
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.market.hub import MarketHub
@@ -300,3 +300,14 @@ def test_rest_seed_and_live_partial_bar_merge(seed_first):
         live(); seed()
     (c,) = hub.observations("005930", CID).candles.value.candles
     assert (c.open, c.high, c.low, c.close, c.volume) == (Decimal("100"), Decimal("108"), Decimal("98"), Decimal("105"), 50)
+
+
+def test_hub_routes_index_ticks_and_account_events():
+    calls = []
+    hub = live_hub(Clock(kst(10, 0)), index_codes=["001"], on_account=lambda: calls.append(1))
+    hub.apply(IndexTick("001", Decimal("2645.12"), Decimal("-12.34"), Decimal("-0.47"), kst(10, 0)))
+    assert hub.charts.index_quote("001", CID, True, None).state == DataState.LIVE
+    hub.apply(AccountEvent(kst(10, 0)))
+    assert calls == [1]
+    boom = live_hub(Clock(kst(10, 0)), on_account=lambda: 1 / 0)
+    boom.apply(AccountEvent(kst(10, 0)))  # swallowed

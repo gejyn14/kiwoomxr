@@ -9,7 +9,7 @@ from websockets.exceptions import ConnectionClosedError
 
 from spatial_gateway.kiwoom import realtime as realtime_module
 from spatial_gateway.kiwoom.realtime import (
-    CLOSED_IDLE_TIMEOUT, IDLE_TIMEOUT, Book, KiwoomRealtime, Trade, parse_real_frame,
+    AccountEvent, CLOSED_IDLE_TIMEOUT, IDLE_TIMEOUT, Book, IndexTick, KiwoomRealtime, Trade, parse_real_frame,
 )
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.market.session import Market
@@ -78,7 +78,8 @@ def test_unknown_type_and_non_real_frames_are_ignored():
 def test_register_message_subscribes_krx_and_nxt_items():
     assert KiwoomRealtime.register_message(["005930"]) == {
         "trnm": "REG", "grp_no": "1", "refresh": "1",
-        "data": [{"item": ["005930", "005930_NX"], "type": ["0B", "0D"]}],
+        "data": [{"item": ["005930", "005930_NX"], "type": ["0B", "0D"]},
+                 {"item": [], "type": ["0J"]}, {"item": [""], "type": ["04"]}],
     }
 
 
@@ -334,11 +335,11 @@ async def test_frame_that_fails_to_parse_is_dropped_and_the_next_is_emitted(monk
     real_parse = realtime_module.parse_real_frame
     calls = []
 
-    def flaky(frame, today):
+    def flaky(frame, today, now=None):
         calls.append(frame)
         if len(calls) == 1:
             raise ValueError("unparseable " + TOKEN)
-        return real_parse(frame, today)
+        return real_parse(frame, today, now)
 
     monkeypatch.setattr(realtime_module, "parse_real_frame", flaky)
     rt, connect, tokens, events, states, sleeps = make([[OK_LOGIN, OK_REG, REAL, REAL]], stop_after=1)
@@ -420,3 +421,33 @@ async def test_measured_login_8005_frame_invalidates_token():
     await run_until_cancel(rt)
     assert tokens.invalidated == 1
     assert states == [(False, "KIWOOM_AUTH")]
+
+
+def test_index_frame_parses_absolute_price_and_signed_change():
+    frame = trade_frame({"10": "+264512", "11": "-1234", "12": "-0.47", "20": "101500"}, item="001", type_="0J")
+    [t] = parse_real_frame(frame, TODAY)
+    assert isinstance(t, IndexTick)
+    assert (t.code, t.price, t.change, t.change_percent) == ("001", Decimal("2645.12"), Decimal("-12.34"), Decimal("-0.47"))
+    assert t.at == datetime(2026, 10, 27, 10, 15, 0, tzinfo=KST)
+
+
+def test_index_frame_with_decimal_point_is_not_rescaled():
+    frame = trade_frame({"10": "2645.12", "11": "-12.34", "12": "-0.47", "20": "101500"}, item="001", type_="0J")
+    [t] = parse_real_frame(frame, TODAY)
+    assert (t.price, t.change) == (Decimal("2645.12"), Decimal("-12.34"))
+
+
+def test_balance_frame_emits_signal_without_account_number(caplog):
+    frame = trade_frame({"9201": "1234567890", "9001": "005930", "930": "1"}, item="", type_="04")
+    now = datetime(2026, 10, 27, 11, 0, tzinfo=KST)
+    events = parse_real_frame(frame, TODAY, now)
+    assert events == [AccountEvent(now)]
+    assert "1234567890" not in repr(events[0]) and "1234567890" not in caplog.text
+
+
+def test_register_message_includes_index_and_balance_groups():
+    data = KiwoomRealtime.register_message(["005930"], index_codes=["001"])["data"]
+    assert len(data) == 3
+    assert data[0]["type"] == ["0B", "0D"]
+    assert data[1] == {"item": ["001"], "type": ["0J"]}
+    assert data[2]["type"] == ["04"]
