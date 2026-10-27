@@ -8,7 +8,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -16,14 +16,16 @@ import websockets
 from websockets.exceptions import WebSocketException
 
 from spatial_gateway.kiwoom import values as v
-from spatial_gateway.market.session import Market, realtime_item
+from spatial_gateway.market.session import Market, active_market, realtime_item
 from spatial_gateway.settings import Settings
 
 _BACKOFF = (1, 2, 4, 8, 15)
 _NX = "_NX"
 _AUTH_CODE = 8005
 ACK_TIMEOUT = 10.0
-IDLE_TIMEOUT = 60.0
+IDLE_TIMEOUT = 15.0         # during a KRX/NXT session trades and PINGs keep the socket busy
+CLOSED_IDLE_TIMEOUT = 60.0  # outside sessions only PINGs arrive
+_STABLE_SESSION = timedelta(seconds=30)  # a registration must last this long to reset the backoff
 
 _log = logging.getLogger(__name__)
 
@@ -111,6 +113,11 @@ class _AuthFailed(Exception):
     pass
 
 
+def _log_system(frame: dict) -> None:
+    code = frame.get("code")  # the message text is not logged
+    _log.warning("kiwoom SYSTEM frame: code=%s", str(code)[:32] if isinstance(code, (str, int)) else None)
+
+
 def _loads(raw: Any) -> dict | None:
     try:
         frame = json.loads(raw)
@@ -132,9 +139,11 @@ class KiwoomRealtime:
         clock: Callable[[], datetime] = lambda: datetime.now(v.KST),
         ack_timeout: float = ACK_TIMEOUT,
         idle_timeout: float = IDLE_TIMEOUT,
+        closed_idle_timeout: float = CLOSED_IDLE_TIMEOUT,
     ) -> None:
         self._ack_timeout = ack_timeout
         self._idle_timeout = idle_timeout
+        self._closed_idle_timeout = closed_idle_timeout
         self._settings = settings
         self._tokens = tokens
         self._on_event = on_event
@@ -143,6 +152,7 @@ class KiwoomRealtime:
         self._sleep = sleep
         self._clock = clock
         self._attempt = 0
+        self._registered_at: datetime | None = None
 
     @staticmethod
     def register_message(codes: Sequence[str]) -> dict:
@@ -159,6 +169,7 @@ class KiwoomRealtime:
 
     async def run(self) -> None:
         while True:
+            self._registered_at = None
             try:
                 token = await self._tokens.token()
             except Exception as error:
@@ -172,6 +183,11 @@ class KiwoomRealtime:
                 except (_Dropped, WebSocketException, OSError, TimeoutError) as error:
                     _log.warning("realtime connection ended: %s", type(error).__name__)
                     self._state(False, "KIWOOM_WS_CLOSED")
+                except Exception as error:  # never let the loop die; CancelledError still propagates
+                    _log.error("realtime session failed: %s", type(error).__name__)
+                    self._state(False, "KIWOOM_WS_CLOSED")
+            if self._registered_at is not None and self._clock() - self._registered_at >= _STABLE_SESSION:
+                self._attempt = 0
             delay = _BACKOFF[min(self._attempt, len(_BACKOFF) - 1)]
             self._attempt += 1
             await self._sleep(delay)
@@ -184,10 +200,14 @@ class KiwoomRealtime:
             kind = frame.get("trnm")
             if kind == "PING":
                 await ws.send(json.dumps(frame))
-            elif "return_code" in frame and kind == trnm:
-                return frame
             elif kind == "REAL":
                 buffer.append(frame)
+            else:
+                if kind == "SYSTEM":
+                    _log_system(frame)
+                # The REG ack's trnm is not pinned down; any non-LOGIN frame with a return_code answers it.
+                if "return_code" in frame and (kind == trnm or (trnm == "REG" and kind != "LOGIN")):
+                    return frame
 
     async def _session(self, token: str) -> None:
         async with self._connect(self._settings.ws_url, ping_interval=None, ping_timeout=None) as ws:
@@ -205,23 +225,32 @@ class KiwoomRealtime:
                 ack = await self._recv_ack(ws, "REG", buffer)
             if ack.get("return_code") != 0:
                 raise _Dropped
-            self._attempt = 0
+            self._registered_at = self._clock()
             self._state(True, None)
             for frame in buffer:
                 self._emit(frame)
             while True:
-                async with asyncio.timeout(self._idle_timeout):
+                idle = self._idle_timeout if active_market(self._clock()) is not None else self._closed_idle_timeout
+                async with asyncio.timeout(idle):
                     raw = await ws.recv()
                 frame = _loads(raw)
                 if frame is None:
                     continue
-                if frame.get("trnm") == "PING":
+                kind = frame.get("trnm")
+                if kind == "PING":
                     await ws.send(json.dumps(frame))
+                elif kind == "SYSTEM":
+                    _log_system(frame)
                 else:
                     self._emit(frame)
 
     def _emit(self, frame: dict) -> None:
-        for event in parse_real_frame(frame, self._clock().astimezone(v.KST).date()):
+        try:
+            events = parse_real_frame(frame, self._clock().astimezone(v.KST).date())
+        except Exception as error:  # drop this frame only; the session keeps reading
+            _log.warning("realtime frame dropped: %s", type(error).__name__)
+            return
+        for event in events:
             try:
                 self._on_event(event)
             except Exception as error:

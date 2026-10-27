@@ -10,6 +10,7 @@ import httpx
 from fastapi import Depends, FastAPI, Header, Path, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .capabilities import HubMarket
@@ -35,6 +36,17 @@ class Unauthorized(Exception):
 
 def _now() -> datetime:
     return datetime.now(KST)
+
+
+class _LoggedTrustedHost(TrustedHostMiddleware):
+    """TrustedHostMiddleware that logs the rejected Host value (only that header) for LAN setup debugging."""
+
+    async def __call__(self, scope, receive, send) -> None:
+        if not self.allow_any and scope["type"] in ("http", "websocket"):
+            host = Headers(scope=scope).get("host", "").split(":")[0]
+            if not any(host == p or (p.startswith("*") and host.endswith(p[1:])) for p in self.allowed_hosts):
+                log.warning("rejected Host: %r (add it to GATEWAY_ALLOWED_HOSTS)", host[:255])
+        await super().__call__(scope, receive, send)
 
 
 async def _seed(rest: KiwoomRest, hub: MarketHub, codes: tuple[str, ...]) -> None:
@@ -64,33 +76,36 @@ def create_app(settings: Settings | None = None, *, hub: MarketHub | None = None
             log.error("broker task died: %s", type(error).__name__)
             hub.set_connection(False, "KIWOOM_WS_CLOSED")
 
+    def _seed_done(done: asyncio.Task) -> None:
+        if not done.cancelled() and done.exception() is not None:  # non-fatal: series stay LOADING
+            log.warning("minute candle seeding failed: %s", type(done.exception()).__name__)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task: asyncio.Task | None = None
+        tasks: list[asyncio.Task] = []
         client: httpx.AsyncClient | None = None
         if start_broker:
             client = httpx.AsyncClient(timeout=10.0)
             tokens = TokenProvider(client, settings, _now)
             rest = KiwoomRest(client, tokens, settings)
             realtime = KiwoomRealtime(settings, tokens, hub.apply, hub.set_connection)
-
-            async def broker() -> None:
-                await _seed(rest, hub, settings.watch_codes)
-                await realtime.run()
-
-            task = asyncio.create_task(broker())
-            task.add_done_callback(_broker_done)
+            # Realtime starts first and never waits for REST seeding; a slow REST only delays history.
+            broker = asyncio.create_task(realtime.run())
+            broker.add_done_callback(_broker_done)
+            seeding = asyncio.create_task(_seed(rest, hub, settings.watch_codes))
+            seeding.add_done_callback(_seed_done)
+            tasks = [broker, seeding]
         try:
             yield
         finally:
-            if task is not None:
+            for task in tasks:
                 task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
             if client is not None:
                 await client.aclose()
 
     app = FastAPI(title="Spatial Trading Gateway", version="0.3.0", lifespan=lifespan)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*settings.allowed_hosts, "testserver"])
+    app.add_middleware(_LoggedTrustedHost, allowed_hosts=list(settings.allowed_hosts))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):

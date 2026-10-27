@@ -94,13 +94,47 @@ def test_disconnect_marks_values_disconnected_but_keeps_them():
     assert hub.observations("005930", CID).quote.state == DataState.LIVE
 
 
-def test_no_active_market_reports_unavailable_market_closed():
-    hub = live_hub(Clock(kst(10, 0, day=31)))
-    hub.apply(trade(kst(10, 0, day=31), 100))
+def test_no_active_market_without_data_reports_unavailable_market_closed():
+    hub = live_hub(Clock(kst(10, 0, day=31)), watch_codes=["005930"])
     snap = hub.observations("005930", CID)
     assert snap.market is None
     for obs in (snap.quote, snap.candles, snap.orderbook):
         assert obs.state == DataState.UNAVAILABLE and obs.reason == "MARKET_CLOSED" and obs.value is None
+
+
+def test_after_close_serves_most_recent_market_as_delayed_market_closed():
+    clock = Clock(kst(15, 29, 50))
+    hub = live_hub(clock)
+    hub.apply(trade(kst(15, 29, 49), 100, Market.KRX))
+    clock.now = kst(19, 59, 30)
+    hub.apply(trade(kst(19, 59, 29), 200, Market.NXT))
+    asks = tuple((Decimal(201 + i), 1) for i in range(10))
+    bids = tuple((Decimal(199 - i), 1) for i in range(10))
+    hub.apply(Book(code="005930", market=Market.NXT, asks=asks, bids=bids, at=kst(19, 59, 29)))
+    clock.now = kst(20, 1)
+    snap = hub.observations("005930", CID)
+    assert snap.market == Market.NXT
+    for obs in (snap.quote, snap.candles, snap.orderbook):
+        assert obs.state == DataState.DELAYED and obs.reason == "MARKET_CLOSED" and obs.value is not None
+    assert snap.quote.value.last_price == Decimal("200") and snap.quote.source_at == kst(19, 59, 29)
+    assert [c.close for c in snap.candles.value.candles] == [Decimal("200")]
+    assert snap.orderbook.value.asks[0].price == Decimal("201")
+    clock.now = kst(7, 0, day=28)  # before the next NXT pre-market: still the last NXT values
+    assert hub.observations("005930", CID).market == Market.NXT
+
+
+def test_after_close_capability_without_values_stays_unavailable_and_disconnect_wins():
+    clock = Clock(kst(15, 29, 50))
+    hub = live_hub(clock)
+    hub.apply(trade(kst(15, 29, 49), 100, Market.KRX))
+    clock.now = kst(16, 0, day=31)  # Saturday
+    snap = hub.observations("005930", CID)
+    assert snap.market == Market.KRX and snap.quote.state == DataState.DELAYED
+    assert snap.orderbook.state == DataState.UNAVAILABLE and snap.orderbook.reason == "MARKET_CLOSED"
+    hub.set_connection(False, "KIWOOM_WS_CLOSED")
+    quote = hub.observations("005930", CID).quote
+    assert quote.state == DataState.DISCONNECTED and quote.reason == "KIWOOM_WS_CLOSED"
+    assert quote.value.last_price == Decimal("100")
 
 
 def test_untracked_code_is_unavailable_not_zero():

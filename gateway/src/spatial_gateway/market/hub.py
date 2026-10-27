@@ -68,6 +68,11 @@ class _State:
     trade_at: datetime | None = None
     series_received: datetime | None = None
 
+    @property
+    def last_received(self) -> datetime | None:
+        times = [t for t in (self.quote_received, self.book_received, self.series_received) if t is not None]
+        return max(times) if times else None
+
 
 def _minute(at: datetime) -> datetime:
     return at.astimezone(KST).replace(second=0, microsecond=0)
@@ -217,9 +222,17 @@ class MarketHub:
         return True
 
     # -- reads -------------------------------------------------------------
+    def _latest_market(self, code: str) -> Market | None:
+        """Market whose state for `code` was received most recently, i.e. the last session that traded."""
+        received = [(s.last_received, m) for (c, m), s in self._states.items() if c == code and s.last_received]
+        return max(received)[1] if received else None
+
     def observations(self, code: str, correlation_id: str) -> HubSnapshot:
         now = self._clock()
         market = active_market(now)
+        closed = market is None
+        if closed:  # outside sessions the last session's values stay visible as DELAYED / MARKET_CLOSED
+            market = self._latest_market(code)
 
         def empty(model, state: DataState, reason: str | None, value=None, received=None, source=None):
             return Observation[model](
@@ -232,7 +245,9 @@ class MarketHub:
             if not self._connected:
                 return empty(model, DataState.DISCONNECTED, self._reason, value, received, source)
             if value is None:
-                return empty(model, DataState.LOADING, None)
+                return empty(model, DataState.UNAVAILABLE, "MARKET_CLOSED") if closed else empty(model, DataState.LOADING, None)
+            if closed:
+                return empty(model, DataState.DELAYED, "MARKET_CLOSED", value, received, source)
             return Observation[model](
                 instrument_code=code, state=DataState.LIVE, origin=Origin.KIWOOM, value=value,
                 received_at=received, source_at=source, correlation_id=correlation_id)

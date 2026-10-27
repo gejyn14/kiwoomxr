@@ -12,6 +12,11 @@ KST = timezone(timedelta(hours=9))
 _INTEGER = re.compile(r"[+-]?[0-9]+")
 _HHMMSS = re.compile(r"[0-9]{6}")
 _YYYYMMDDHHMMSS = re.compile(r"[0-9]{14}")
+_MAX_DIGITS = 19  # longer digit strings are never valid quotes; also keeps int() off huge inputs
+
+
+def _too_long(text: str) -> bool:
+    return sum(ch.isdigit() for ch in text) > _MAX_DIGITS
 
 
 def _decimal(text: str) -> Decimal | None:
@@ -27,7 +32,7 @@ def price(raw: str | None) -> Decimal | None:
     if raw is None:
         return None
     text = raw.strip().lstrip("+-")
-    if not text:
+    if not text or _too_long(text):
         return None
     value = _decimal(text)
     if value is None or value == 0:
@@ -50,7 +55,7 @@ def quantity(raw: str | None) -> int | None:
     if raw is None:
         return None
     text = raw.strip()
-    if not _INTEGER.fullmatch(text):
+    if not _INTEGER.fullmatch(text) or _too_long(text):
         return None
     return abs(int(text))
 

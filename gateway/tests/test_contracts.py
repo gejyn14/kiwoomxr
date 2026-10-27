@@ -14,7 +14,7 @@ from spatial_gateway.models import Candle, CandleSeries, DataState, Observation,
 
 
 TOKEN = "t" * 40
-SETTINGS = Settings("ak", "sk", TOKEN, ("005930",), ("127.0.0.1", "localhost"))
+SETTINGS = Settings("ak", "sk", TOKEN, ("005930",), ("127.0.0.1", "localhost", "testserver"))
 AUTH = {"X-Pairing-Token": TOKEN}
 
 

@@ -77,6 +77,8 @@ async def serve_stream(websocket: WebSocket, hub: MarketHub, pairing_token: str,
     pusher = asyncio.ensure_future(_push(websocket, hub, queue, codes, cid, timing, clock))
     try:
         await asyncio.wait({reader, pusher}, return_when=asyncio.FIRST_COMPLETED)
+        if pusher.done() and not pusher.cancelled() and pusher.exception() is not None:
+            log.warning("stream pusher failed: %s", type(pusher.exception()).__name__)
     finally:
         hub.unsubscribe(queue)
         for task in (reader, pusher):

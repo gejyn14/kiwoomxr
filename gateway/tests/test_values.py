@@ -21,3 +21,8 @@ def test_times_are_explicit_kst():
     assert kst_datetime("20250917132000") == datetime(2025, 9, 17, 13, 20, tzinfo=KST)
     assert kst_time_today("153001", date(2026, 10, 27)) == datetime(2026, 10, 27, 15, 30, 1, tzinfo=KST)
     assert kst_time_today("99", date(2026, 10, 27)) is None
+
+def test_digit_strings_longer_than_19_digits_are_rejected():
+    assert quantity("9" * 19) == int("9" * 19) and price("9" * 19) == Decimal("9" * 19)
+    assert quantity("1" * 20) is None and quantity("-" + "1" * 5000) is None
+    assert price("+" + "1" * 20) is None and price("1" * 5000) is None

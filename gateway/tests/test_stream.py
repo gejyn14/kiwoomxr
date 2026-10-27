@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from decimal import Decimal
 
@@ -19,7 +20,7 @@ APPKEY, SECRET = "appkey-AAAA-1111", "secret-BBBB-2222"
 FAKE_KIWOOM_TOKEN = "kiwoom-token-ZZZZ-9999"
 CID = "11111111-1111-4111-8111-111111111111"
 FAST = StreamTiming(quote_interval=0.02, candles_interval=0.05, heartbeat_interval=0.15, handshake_timeout=1.0)
-SETTINGS = Settings(APPKEY, SECRET, TOKEN, ("005930",), ("127.0.0.1",))
+SETTINGS = Settings(APPKEY, SECRET, TOKEN, ("005930",), ("127.0.0.1", "testserver"))  # TestClient's Host
 NOW = datetime(2026, 10, 27, 10, 0, 6, tzinfo=KST)
 
 
@@ -76,6 +77,26 @@ def test_bad_subscribe_closes_4401_without_data(raw):
     assert info.value.code == 4401
 
 
+def test_after_close_stream_labels_the_fallback_market():
+    clock = {"now": datetime(2026, 10, 27, 19, 59, 30, tzinfo=KST)}
+    hub = MarketHub(lambda: clock["now"], watch_codes=("005930",))
+    hub.set_connection(True, None)
+    hub.apply(Trade(code="005930", market=Market.NXT, price=Decimal("200"), change=None, change_percent=None,
+                    volume=1, acc_volume=10, at=datetime(2026, 10, 27, 19, 59, 29, tzinfo=KST)))
+    clock["now"] = datetime(2026, 10, 27, 20, 1, tzinfo=KST)
+    client = TestClient(create_app(SETTINGS, hub=hub, start_broker=False, timing=FAST))
+    with client.websocket_connect("/v1/stream") as ws:
+        ws.send_text(sub())
+        seen = collect(ws, lambda m: any(x["type"] == "heartbeat" for x in m)
+                       and any(x["type"] == "observation" and x["capability"] == "quote" for x in m))
+    quote = [m for m in seen if m["type"] == "observation" and m["capability"] == "quote"][0]
+    assert quote["market"] == "NXT"
+    assert quote["observation"]["state"] == "DELAYED" and quote["observation"]["reason"] == "MARKET_CLOSED"
+    assert quote["observation"]["value"]["last_price"] == "200"
+    beat = [m for m in seen if m["type"] == "heartbeat"][0]
+    assert beat["broker_connected"] is True and beat["reason"] is None
+
+
 def test_heartbeat_reports_broker_state():
     hub, client = make()
     with client.websocket_connect("/v1/stream") as ws:
@@ -119,19 +140,72 @@ def test_rest_requires_pairing_token():
     assert client.get("/health").status_code == 200
 
 
-def test_no_secret_or_kiwoom_token_in_any_payload():
-    hub, client = make()
-    hub.apply(trade("78800"))
+def test_no_secret_or_kiwoom_token_in_any_payload(monkeypatch):
+    import asyncio
+    import time
+
+    import httpx
+
+    from spatial_gateway import app as app_module
+
+    seen = {"login": None, "rest": []}
+    real_client = httpx.AsyncClient
+
+    class FakeTokens:  # the provider the real REST and realtime clients use holds the fake Kiwoom token
+        def __init__(self, *a, **k): pass
+        async def token(self): return FAKE_KIWOOM_TOKEN
+        async def invalidate(self): return True
+
+    def rest_handler(request):
+        seen["rest"].append(request.headers["authorization"])
+        return httpx.Response(200, json={"return_code": 0, "return_msg": FAKE_KIWOOM_TOKEN, "stk_min_pole_chart_qry": []})
+
+    class KiwoomWS:
+        def __init__(self):
+            self.frames = [{"trnm": "LOGIN", "return_code": 0, "return_msg": FAKE_KIWOOM_TOKEN},
+                           {"trnm": "REG", "return_code": 0},
+                           {"trnm": "REAL", "data": [{"type": "0B", "item": "005930",
+                                                      "values": {"10": "+78800", "15": "+1", "20": "100005"}}]}]
+
+        async def send(self, text):
+            msg = json.loads(text)
+            if msg["trnm"] == "LOGIN":
+                seen["login"] = msg["token"]
+
+        async def recv(self):
+            if self.frames:
+                return json.dumps(self.frames.pop(0))
+            await asyncio.Event().wait()
+
+    class Connect:
+        def __init__(self, url, **kwargs): self.ws = KiwoomWS()
+        async def __aenter__(self): return self.ws
+        async def __aexit__(self, *exc): return False
+
+    real_realtime = app_module.KiwoomRealtime
+    monkeypatch.setattr(app_module, "TokenProvider", FakeTokens)
+    monkeypatch.setattr(app_module.httpx, "AsyncClient",
+                        lambda **k: real_client(transport=httpx.MockTransport(rest_handler)))
+    monkeypatch.setattr(app_module, "KiwoomRealtime",
+                        lambda *a, **k: real_realtime(*a, connect=Connect, clock=lambda: NOW, **k))
+
+    hub = MarketHub(lambda: NOW, watch_codes=("005930",))
     texts = []
-    with client.websocket_connect("/v1/stream") as ws:
-        ws.send_text(sub())
-        texts += [json.dumps(m) for m in collect(
-            ws, lambda m: any(x["type"] == "heartbeat" for x in m) and len(m) >= 4)]
-    for cap in ("quote", "candles", "orderbook"):
-        texts.append(client.get(f"/v1/market/005930/{cap}", headers={"X-Pairing-Token": TOKEN}).text)
-    health = client.get("/health")
-    texts.append(health.text)
+    with TestClient(create_app(SETTINGS, hub=hub, start_broker=True, timing=FAST)) as client:
+        deadline = time.time() + 3
+        while time.time() < deadline and hub.observations("005930", CID).quote.value is None:
+            time.sleep(0.02)
+        assert seen["login"] == FAKE_KIWOOM_TOKEN and f"Bearer {FAKE_KIWOOM_TOKEN}" in seen["rest"]
+        with client.websocket_connect("/v1/stream") as ws:
+            ws.send_text(sub())
+            texts += [json.dumps(m) for m in collect(
+                ws, lambda m: any(x["type"] == "heartbeat" for x in m) and len(m) >= 4)]
+        for cap in ("quote", "candles", "orderbook"):
+            texts.append(client.get(f"/v1/market/005930/{cap}", headers={"X-Pairing-Token": TOKEN}).text)
+        health = client.get("/health")
+        texts.append(health.text)
     assert health.json()["orders_enabled"] is False and health.json()["broker_connected"] is True
+    assert any('"78800"' in text for text in texts)
     for text in texts:
         for secret in (APPKEY, SECRET, FAKE_KIWOOM_TOKEN, TOKEN):
             assert secret not in text
@@ -200,3 +274,64 @@ def test_broker_lifespan_seeds_marks_down_on_crash_and_cleans_up(monkeypatch):
             beat = collect(ws, lambda m: any(x["type"] == "heartbeat" for x in m))[-1]
             assert beat["broker_connected"] is False and beat["reason"] == "KIWOOM_WS_CLOSED"
     assert state["closed"] is True
+
+
+def test_realtime_starts_without_waiting_for_a_slow_rest_seed(monkeypatch):
+    import asyncio
+    import time
+    from spatial_gateway import app as app_module
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def aclose(self): pass
+
+    class SlowRest:
+        def __init__(self, *a, **k): pass
+        async def minute_candles(self, code, limit=240):
+            await asyncio.Event().wait()
+
+    class FakeRealtime:
+        def __init__(self, settings, tokens, on_event, on_state, **k): self.on_state = on_state
+        async def run(self):
+            self.on_state(True, None)
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(app_module, "TokenProvider", lambda *a, **k: None)
+    monkeypatch.setattr(app_module, "KiwoomRest", SlowRest)
+    monkeypatch.setattr(app_module, "KiwoomRealtime", FakeRealtime)
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeClient)
+    hub = MarketHub(lambda: NOW, watch_codes=("005930",))
+    with TestClient(create_app(SETTINGS, hub=hub, start_broker=True, timing=FAST)):
+        deadline = time.time() + 3
+        while time.time() < deadline and hub.connection != (True, None):
+            time.sleep(0.02)
+        assert hub.connection == (True, None)
+
+
+def test_pusher_crash_is_logged_by_type(caplog):
+    class BrokenHub(MarketHub):
+        def observations(self, code, correlation_id):
+            raise RuntimeError("boom " + FAKE_KIWOOM_TOKEN)
+
+    hub = BrokenHub(lambda: NOW, watch_codes=("005930",))
+    client = TestClient(create_app(SETTINGS, hub=hub, start_broker=False, timing=FAST))
+    with caplog.at_level(logging.WARNING):
+        with client.websocket_connect("/v1/stream") as ws:
+            ws.send_text(sub())
+            with pytest.raises(WebSocketDisconnect):
+                for _ in range(10):
+                    ws.receive_json()
+    assert "RuntimeError" in caplog.text and FAKE_KIWOOM_TOKEN not in caplog.text
+
+
+def test_rejected_host_is_logged_and_testserver_is_not_a_production_host(caplog):
+    production = Settings(APPKEY, SECRET, TOKEN, ("005930",), ("127.0.0.1",))
+    client = TestClient(create_app(production, start_broker=False, timing=FAST))
+    with caplog.at_level(logging.WARNING):
+        assert client.get("/health").status_code == 400
+        assert client.get("/health", headers={"host": "evil.example:8000", "X-Pairing-Token": TOKEN}).status_code == 400
+        assert client.get("/health", headers={"host": "127.0.0.1:8000"}).status_code == 200
+    rejected = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("testserver" in m for m in rejected) and any("evil.example" in m for m in rejected)
+    assert not any("127.0.0.1" in m for m in rejected)
+    assert TOKEN not in caplog.text

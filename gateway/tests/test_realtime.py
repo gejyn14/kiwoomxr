@@ -1,12 +1,16 @@
 import asyncio
 import json
-from datetime import date, datetime
+import logging
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from websockets.exceptions import ConnectionClosedError
 
-from spatial_gateway.kiwoom.realtime import Book, KiwoomRealtime, Trade, parse_real_frame
+from spatial_gateway.kiwoom import realtime as realtime_module
+from spatial_gateway.kiwoom.realtime import (
+    CLOSED_IDLE_TIMEOUT, IDLE_TIMEOUT, Book, KiwoomRealtime, Trade, parse_real_frame,
+)
 from spatial_gateway.kiwoom.values import KST
 from spatial_gateway.market.session import Market
 from spatial_gateway.settings import Settings
@@ -90,6 +94,8 @@ class FakeWS:
         if not self.script:
             raise ConnectionClosedError(None, None)
         item = self.script.pop(0)
+        if callable(item):  # side effect (e.g. advancing the clock), then the frame it returns
+            item = item()
         if isinstance(item, Exception):
             raise item
         return item if isinstance(item, str) else json.dumps(item)
@@ -131,7 +137,7 @@ class FakeTokens:
         return True
 
 
-def make(scripts, stop_after=None, **kw):
+def make(scripts, stop_after=None, clock=lambda: datetime(2026, 10, 27, 15, 40, tzinfo=KST), **kw):
     settings = Settings("a", "s", "p" * 32, ("005930",), ("127.0.0.1",))
     connect = FakeConnect(scripts)
     tokens = FakeTokens()
@@ -144,7 +150,7 @@ def make(scripts, stop_after=None, **kw):
 
     rt = KiwoomRealtime(
         settings, tokens, events.append, lambda ok, reason: states.append((ok, reason)),
-        connect=connect, sleep=sleep, clock=lambda: datetime(2026, 10, 27, 15, 40, tzinfo=KST), **kw,
+        connect=connect, sleep=sleep, clock=clock, **kw,
     )
     return rt, connect, tokens, events, states, sleeps
 
@@ -189,13 +195,37 @@ async def test_login_8005_invalidates_token_and_reconnects_with_backoff():
     assert TOKEN not in repr(states)
 
 
-async def test_backoff_caps_at_15_and_resets_after_successful_registration():
+async def test_backoff_caps_at_15_and_a_brief_registration_does_not_reset_it():
     drop = []
     ok = [{"trnm": "LOGIN", "return_code": 0}, {"trnm": "REG", "return_code": 0}]
     scripts = [drop] * 6 + [ok] + [drop]
     rt, connect, tokens, events, states, sleeps = make(scripts, stop_after=8)
     await run_until_cancel(rt)
-    assert sleeps == [1, 2, 4, 8, 15, 15, 1, 2]
+    assert sleeps == [1, 2, 4, 8, 15, 15, 15, 15]
+
+
+class SteppedClock:
+    def __init__(self):
+        self.now = datetime(2026, 10, 27, 15, 40, tzinfo=KST)
+
+    def __call__(self):
+        return self.now
+
+    def after(self, seconds, frame):
+        def step():
+            self.now += timedelta(seconds=seconds)
+            return frame
+        return step
+
+
+async def test_backoff_resets_only_after_30_seconds_registered():
+    clock = SteppedClock()
+    ok = [{"trnm": "LOGIN", "return_code": 0}, {"trnm": "REG", "return_code": 0}]
+    short = ok + [clock.after(5, {"trnm": "PING"})]
+    long = ok + [clock.after(30, {"trnm": "PING"})]
+    rt, connect, tokens, events, states, sleeps = make([[], [], short, long, []], stop_after=5, clock=clock)
+    await run_until_cancel(rt)
+    assert sleeps == [1, 2, 4, 1, 2]
 
 
 async def test_token_failure_backs_off_without_connecting():
@@ -240,7 +270,7 @@ async def test_silent_server_times_out_at_login_reg_and_idle():
     rt._connect = hang_connect(connect)
     await run_until_cancel(rt)
     assert states == [(False, "KIWOOM_WS_CLOSED"), (False, "KIWOOM_WS_CLOSED"), (True, None), (False, "KIWOOM_WS_CLOSED")]
-    assert sleeps == [1, 2, 1]
+    assert sleeps == [1, 2, 4]
 
 
 async def test_callback_exceptions_do_not_kill_the_loop():
@@ -285,3 +315,92 @@ async def test_any_token_error_is_auth_and_never_escapes():
     tokens.token = boom
     await run_until_cancel(rt)
     assert states == [(False, "KIWOOM_AUTH")] * 2
+
+
+OK_LOGIN = {"trnm": "LOGIN", "return_code": 0}
+OK_REG = {"trnm": "REG", "return_code": 0}
+
+
+async def test_oversized_digit_field_does_not_kill_the_session():
+    huge = trade_frame({"10": "+78800", "15": "1" * 5000, "20": "153512"})
+    rt, connect, tokens, events, states, sleeps = make([[OK_LOGIN, OK_REG, huge, REAL]], stop_after=1)
+    await run_until_cancel(rt)
+    assert states == [(True, None), (False, "KIWOOM_WS_CLOSED")]
+    assert events[0].volume is None  # the oversized field is rejected, not parsed
+    assert len(events) == 2 and events[1].price == Decimal("78800")
+
+
+async def test_frame_that_fails_to_parse_is_dropped_and_the_next_is_emitted(monkeypatch, caplog):
+    real_parse = realtime_module.parse_real_frame
+    calls = []
+
+    def flaky(frame, today):
+        calls.append(frame)
+        if len(calls) == 1:
+            raise ValueError("unparseable " + TOKEN)
+        return real_parse(frame, today)
+
+    monkeypatch.setattr(realtime_module, "parse_real_frame", flaky)
+    rt, connect, tokens, events, states, sleeps = make([[OK_LOGIN, OK_REG, REAL, REAL]], stop_after=1)
+    with caplog.at_level(logging.WARNING):
+        await run_until_cancel(rt)
+    assert len(events) == 1 and states == [(True, None), (False, "KIWOOM_WS_CLOSED")]
+    assert "ValueError" in caplog.text and TOKEN not in caplog.text
+
+
+async def test_unexpected_session_error_is_reported_and_retried(caplog):
+    rt, connect, tokens, events, states, sleeps = make([], stop_after=2)
+
+    def explode(url, **kwargs):
+        raise RuntimeError("boom " + TOKEN)
+
+    rt._connect = explode
+    with caplog.at_level(logging.WARNING):
+        await run_until_cancel(rt)
+    assert states == [(False, "KIWOOM_WS_CLOSED")] * 2
+    assert sleeps == [1, 2]
+    assert "RuntimeError" in caplog.text and TOKEN not in caplog.text
+
+
+def test_idle_timeout_defaults():
+    assert (IDLE_TIMEOUT, CLOSED_IDLE_TIMEOUT) == (15.0, 60.0)
+
+
+@pytest.mark.parametrize("hour,open_timeout,closed_timeout", [(15, 0.01, 30.0), (21, 30.0, 0.01)])
+async def test_idle_timeout_depends_on_the_market_session(hour, open_timeout, closed_timeout):
+    rt, connect, tokens, events, states, sleeps = make(
+        [[OK_LOGIN, OK_REG]], stop_after=1, clock=lambda: datetime(2026, 10, 27, hour, 40, tzinfo=KST),
+        idle_timeout=open_timeout, closed_idle_timeout=closed_timeout,
+    )
+    rt._connect = hang_connect(connect)
+    await asyncio.wait_for(run_until_cancel(rt), 2)  # the wrong timeout would hang for 30 s
+    assert states == [(True, None), (False, "KIWOOM_WS_CLOSED")]
+
+
+@pytest.mark.parametrize("trnm", ["REG", "REG_ACK"])
+async def test_reg_ack_is_any_non_login_frame_with_a_return_code(trnm):
+    script = [OK_LOGIN, {"trnm": "LOGIN", "return_code": 0}, {"trnm": trnm, "return_code": 0}, REAL]
+    rt, connect, tokens, events, states, sleeps = make([script], stop_after=1)
+    await run_until_cancel(rt)
+    assert states == [(True, None), (False, "KIWOOM_WS_CLOSED")]
+    assert len(events) == 1
+
+
+async def test_system_frames_are_logged_by_code_only(caplog):
+    script = [
+        OK_LOGIN, {"trnm": "SYSTEM", "code": "R10001", "message": "handshake-text"},
+        OK_REG, {"trnm": "SYSTEM", "code": "R10002", "message": "session-text"},
+    ]
+    rt, connect, tokens, events, states, sleeps = make([script], stop_after=1)
+    with caplog.at_level(logging.WARNING):
+        await run_until_cancel(rt)
+    assert "R10001" in caplog.text and "R10002" in caplog.text
+    assert "handshake-text" not in caplog.text and "session-text" not in caplog.text
+
+
+async def test_measured_login_8005_frame_invalidates_token():
+    bad = [{"trnm": "LOGIN", "return_code": 805004, "return_msg": "인증에 실패했습니다 [CODE=8005 토큰이 유효하지 않습니다]"}]
+    rt, connect, tokens, events, states, sleeps = make([bad], stop_after=1)
+    await run_until_cancel(rt)
+    assert tokens.invalidated == 1
+    assert states == [(False, "KIWOOM_AUTH")]
