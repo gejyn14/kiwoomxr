@@ -25,6 +25,9 @@ namespace SpatialTrading.Spread
         /// <summary>Corner handle square edge in metres; its centre sits half of this in from the panel corner.</summary>
         public const float HandleSize = 0.034f;
         private const float BodyDepth = 0.02f;
+        /// <summary>A flying panel moves this far toward the viewer (−z) and draws above its neighbours.</summary>
+        public const float FlyLift = 0.03f;
+        private const int FlySortBoost = 10;
 
         [SerializeField] private PanelId _id;
         [SerializeField] private SpreadWorkspace _workspace;
@@ -48,6 +51,10 @@ namespace SpatialTrading.Spread
         private Vector3 _snapFrom, _snapTo;
         private float _snapStart = -1f;
         private Coroutine _effect;
+        private bool _flying;
+        private Canvas _canvas;
+        private int _baseSortingOrder;
+        private Behaviour[] _grabInteractables;
         private static AudioClip _whoosh;
 
         /// <summary>A flick released the panel; the vector is the horizontal throw direction (world, normalised).</summary>
@@ -59,6 +66,8 @@ namespace SpatialTrading.Spread
         public Transform Handle => _handle;
         public bool IsHeld => _moving || _resizing;
         public bool IsAnimating => _effect != null || _snapStart >= 0f;
+        /// <summary>Mid dismiss flight: not grabbable, not re-laid out.</summary>
+        public bool IsFlying => _flying;
 
         public void Configure(PanelId id, SpreadWorkspace workspace, HoloPanel content, RectTransform surface, CanvasGroup fade,
             BoxCollider body, BoxCollider grabBar, Grabbable grabbable, Transform handle, BoxCollider handleCollider,
@@ -124,7 +133,9 @@ namespace SpatialTrading.Spread
             if (_handleGrabbable != null) _handleGrabbable.WhenPointerEventRaised -= OnHandlePointer;
             _moving = _resizing = false;
             _snapStart = -1f;
+            if (_effect != null) StopCoroutine(_effect);
             _effect = null;
+            EndFlightState();
         }
 
         private void OnBodyPointer(PointerEvent e)
@@ -147,9 +158,12 @@ namespace SpatialTrading.Spread
             }
         }
 
-        public void BeginMove()
+        /// <summary>Starts a move. Refused only mid-flight (the grab interactables are off then anyway); a fade-in is
+        /// finished at once so the hand and the grid agree. Returns whether the move started.</summary>
+        public bool BeginMove()
         {
-            if (_moving || _effect != null || _workspace == null) return;
+            if (_moving || _flying || _workspace == null) return false;
+            if (_effect != null) Settle();
             _moving = true;
             _snapStart = -1f;
             _trail.Clear();
@@ -157,6 +171,7 @@ namespace SpatialTrading.Spread
             var t = Time.unscaledTime;
             _flick.Begin(t, p.x, p.y, p.z);
             _trail.Add((t, p));
+            return true;
         }
 
         /// <param name="allowFlick">False when the grab was cancelled by the system rather than released.</param>
@@ -170,13 +185,16 @@ namespace SpatialTrading.Spread
             else _workspace.Drop(_id, transform.position);
         }
 
-        public void BeginResize()
+        /// <summary>Starts a corner-handle resize (same rules as <see cref="BeginMove"/>).</summary>
+        public bool BeginResize()
         {
-            if (_resizing || _moving || _effect != null || _workspace == null) return;
+            if (_resizing || _moving || _flying || _workspace == null) return false;
+            if (_effect != null) Settle();
             _resizing = true;
             _lastRequested = new Vector2Int(_rect.Width, _rect.Height);
             var size = HoloStyle.SizeFor(_rect) * 0.001f;
             _resizeTopLeft = transform.position + transform.rotation * new Vector3(-size.x * .5f, size.y * .5f, 0f);
+            return true;
         }
 
         public void EndResize()
@@ -249,8 +267,41 @@ namespace SpatialTrading.Spread
             _snapStart = -1f;
             if (!gameObject.activeInHierarchy) return;
             if (_effect != null) StopCoroutine(_effect);
+            BeginFlightState();
             AudioSource.PlayClipAtPoint(Whoosh, transform.position, .7f);
             _effect = StartCoroutine(Fly(direction.sqrMagnitude > 1e-6f ? direction.normalized : transform.rotation * Vector3.right));
+        }
+
+        /// <summary>No grabs during the flight (ISDK would otherwise move the transform under the animation and leave the
+        /// panel off the grid), and the panel draws over its neighbours instead of interleaving with them.</summary>
+        private void BeginFlightState()
+        {
+            _flying = true;
+            SetGrabEnabled(false);
+            if (Canvas != null) { _baseSortingOrder = _canvas.sortingOrder; _canvas.sortingOrder = _baseSortingOrder + FlySortBoost; }
+        }
+
+        private void EndFlightState()
+        {
+            if (!_flying) return;
+            _flying = false;
+            SetGrabEnabled(true);
+            if (Canvas != null) _canvas.sortingOrder = _baseSortingOrder;
+        }
+
+        private Canvas Canvas => _canvas != null ? _canvas : (_surface != null ? _canvas = _surface.GetComponent<Canvas>() : null);
+
+        /// <summary>The SDK's grab interactables on the body and the corner handle (not the canvas poke/ray ones).</summary>
+        private void SetGrabEnabled(bool on)
+        {
+            if (_grabInteractables == null)
+            {
+                var found = new List<Behaviour>();
+                foreach (var b in GetComponentsInChildren<MonoBehaviour>(true))
+                    if (b is IInteractable && (_surface == null || !b.transform.IsChildOf(_surface))) found.Add(b);
+                _grabInteractables = found.ToArray();
+            }
+            foreach (var b in _grabInteractables) if (b != null) b.enabled = on;
         }
 
         /// <summary>Re-activates a restored panel with a short fade and grow back to full size.</summary>
@@ -258,6 +309,7 @@ namespace SpatialTrading.Spread
         {
             if (_effect != null) StopCoroutine(_effect);
             _effect = null;
+            EndFlightState();
             gameObject.SetActive(true);
             _effect = StartCoroutine(FadeIn());
         }
@@ -265,18 +317,20 @@ namespace SpatialTrading.Spread
         private IEnumerator Fly(Vector3 direction)
         {
             var start = transform.position;
+            var toward = transform.rotation * Vector3.back; // toward the viewer
             var t0 = Time.unscaledTime;
             while (true)
             {
                 var k = Mathf.Clamp01((Time.unscaledTime - t0) / DismissSeconds);
                 var e = 1f - (1f - k) * (1f - k);
-                transform.position = start + direction * (DismissDistance * e);
+                transform.position = start + direction * (DismissDistance * e) + toward * (FlyLift * Mathf.Min(1f, k * 4f));
                 transform.localScale = Vector3.one * Mathf.Lerp(1f, DismissScale, e);
                 SetAlpha(1f - e);
                 if (k >= 1f) break;
                 yield return null;
             }
             _effect = null;
+            EndFlightState();
             gameObject.SetActive(false);
             transform.localScale = Vector3.one;
             SetAlpha(1f);
@@ -299,11 +353,12 @@ namespace SpatialTrading.Spread
             _effect = null;
         }
 
-        /// <summary>Clears any half-finished flourish (used by reset).</summary>
+        /// <summary>Clears any half-finished flourish (reset, or a grab during the fade-in).</summary>
         public void Settle()
         {
             if (_effect != null) StopCoroutine(_effect);
             _effect = null;
+            EndFlightState();
             transform.localScale = Vector3.one;
             SetAlpha(1f);
         }

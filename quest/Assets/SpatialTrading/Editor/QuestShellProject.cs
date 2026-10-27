@@ -33,6 +33,8 @@ namespace SpatialTrading.Editor
     {
         public const string ScenePath = "Assets/SpatialTrading/Scenes/TraderSpread.unity";
         private const string ScenesFolder = "Assets/SpatialTrading/Scenes";
+        /// <summary>The picker shell scene TraderSpread replaces; the generator removes this one file and nothing else.</summary>
+        private const string RetiredScenePath = ScenesFolder + "/FocusShell.unity";
         private const string Generated = "Assets/Generated";
         /// <summary>Editor-visible head pose for authoring only; at runtime the workspace pins itself to the tracked head.</summary>
         private static readonly Vector3 AuthoringHead = new Vector3(0f, 1.2f, 0f);
@@ -217,9 +219,10 @@ namespace SpatialTrading.Editor
             workspace.Configure(head, eye, market, tray, panels);
             BuildTray(tray, workspace, eye);
 
-            // TraderSpread replaces the picker shell scene and is the only scene; the old scripts stay until their own cleanup.
-            foreach (var other in OtherScenes())
-                if (!AssetDatabase.DeleteAsset(other)) throw new BuildFailedException("Could not remove " + other);
+            // TraderSpread replaces the picker shell scene and is the only build scene; the old scripts stay until their own
+            // cleanup. Only that one retired scene is removed: any other scene in the folder is someone's work and is kept.
+            if (File.Exists(RetiredScenePath) && !AssetDatabase.DeleteAsset(RetiredScenePath))
+                throw new BuildFailedException("Could not remove " + RetiredScenePath);
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             if (!EditorSceneManager.SaveScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene(), ScenePath))
                 throw new BuildFailedException("Could not save Trader Spread scene.");
@@ -468,7 +471,7 @@ namespace SpatialTrading.Editor
         public static void Validate()
         {
             if (!File.Exists(ScenePath)) throw new BuildFailedException("Generate Trader Spread scene first.");
-            if (OtherScenes().Length > 0) throw new BuildFailedException("TraderSpread must be the only scene; remove " + string.Join(", ", OtherScenes()));
+            if (File.Exists(RetiredScenePath)) throw new BuildFailedException("The retired picker scene is still present: " + RetiredScenePath);
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new BuildFailedException("Leave Play Mode before validating or building.");
             // Opening a scene in Single mode can discard unsaved edits. Never do that as a side
@@ -555,11 +558,6 @@ namespace SpatialTrading.Editor
                 throw new BuildFailedException("Scene setup changed while loading. Review/save it, then validate again.");
             Debug.Log("[M1] Static scene/build validation passed. This does not validate headset behavior.");
         }
-
-        private static string[] OtherScenes() =>
-            Directory.Exists(ScenesFolder)
-                ? Directory.GetFiles(ScenesFolder, "*.unity").Select(p => p.Replace('\\', '/')).Where(p => p != ScenePath).ToArray()
-                : new string[0];
 
         /// <summary>Pitch and roll are exactly zero (yaw is free).</summary>
         private static bool Flat(Quaternion rotation)

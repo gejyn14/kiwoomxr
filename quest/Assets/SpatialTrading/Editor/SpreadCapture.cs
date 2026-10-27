@@ -18,22 +18,20 @@ namespace SpatialTrading.Editor
     /// (not -batchmode, so cameras render) with <c>-executeMethod SpatialTrading.Editor.SpreadCapture.Run</c> and the
     /// gateway pairing token in the <c>SPATIAL_PAIRING_TOKEN</c> environment variable. It opens TraderSpread.unity, enters
     /// Play mode, waits for the gateway's data, drives states (a)–(g) through the <see cref="SpreadWorkspace"/> API, renders
-    /// each to a 1920×1080 PNG in artifacts/trader-spread/ and exits. The token is never logged; the user's own EditorPrefs
-    /// gateway settings are put back afterwards. Hand gestures (flick, palm tray, corner drag) are not exercised here.
+    /// each to a 1920×1080 PNG in artifacts/trader-spread/ and exits. The token stays in the process environment, which
+    /// <see cref="MarketDataSession"/> reads ahead of EditorPrefs in the editor: it is never logged and never written to
+    /// EditorPrefs or any file, so a killed or hung editor leaves nothing behind. Hand gestures (flick, palm tray, corner
+    /// drag) are not exercised here.
     /// </summary>
     [InitializeOnLoad]
     public static class SpreadCapture
     {
-        public const string TokenVariable = "SPATIAL_PAIRING_TOKEN";
-        public const string UrlVariable = "SPATIAL_GATEWAY_URL";
+        public const string TokenVariable = MarketDataSession.EditorTokenVariable;
+        public const string UrlVariable = MarketDataSession.EditorUrlVariable;
         private const string DefaultUrl = "ws://127.0.0.1:8471/v1/stream";
         private const string Active = "SpatialTrading.SpreadCapture.Active";
         private const string Stage = "SpatialTrading.SpreadCapture.Stage";
-        private const string HadUrl = "SpatialTrading.SpreadCapture.HadUrl";
-        private const string HadToken = "SpatialTrading.SpreadCapture.HadToken";
-        private const string OldUrl = "SpatialTrading.SpreadCapture.OldUrl";
-        private const string OldToken = "SpatialTrading.SpreadCapture.OldToken";
-        private const string Saved = "SpatialTrading.SpreadCapture.Saved";
+        private const string StartedAt = "SpatialTrading.SpreadCapture.StartedAt";
         private const string Exiting = "SpatialTrading.SpreadCapture.Exiting";
         private const string ExitCode = "SpatialTrading.SpreadCapture.ExitCode";
         private const double PlaceTimeoutSeconds = 30;
@@ -50,7 +48,7 @@ namespace SpatialTrading.Editor
         private static string OutputDirectory => Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/trader-spread"));
 
         private static double _stageAt;
-        private static double _startedAt;
+        private static bool _resumed;
         private static int _stage;
         private static readonly List<Shot> Shots = new List<Shot>();
 
@@ -69,19 +67,18 @@ namespace SpatialTrading.Editor
                 var url = Environment.GetEnvironmentVariable(UrlVariable);
                 if (string.IsNullOrEmpty(url)) url = DefaultUrl;
                 if (!MarketDataSession.AllowedGateway(url)) Fail("Gateway URL is not an allowed stream address.");
-                // Keep the user's own settings in memory for this editor session only, then point the editor at the gateway.
-                SessionState.SetBool(HadUrl, EditorPrefs.HasKey(MarketDataSession.EditorUrlPref));
-                SessionState.SetBool(HadToken, EditorPrefs.HasKey(MarketDataSession.EditorTokenPref));
-                SessionState.SetString(OldUrl, EditorPrefs.GetString(MarketDataSession.EditorUrlPref, string.Empty));
-                SessionState.SetString(OldToken, EditorPrefs.GetString(MarketDataSession.EditorTokenPref, string.Empty));
-                SessionState.SetBool(Saved, true);
-                EditorPrefs.SetString(MarketDataSession.EditorUrlPref, url);
-                EditorPrefs.SetString(MarketDataSession.EditorTokenPref, token);
+                // Process-local only: MarketDataSession reads the environment before EditorPrefs, so nothing reaches disk.
+                Environment.SetEnvironmentVariable(UrlVariable, url);
                 Directory.CreateDirectory(OutputDirectory);
                 foreach (var old in Directory.GetFiles(OutputDirectory, "*.png")) File.Delete(old);
                 EditorSceneManager.OpenScene(QuestShellProject.ScenePath);
                 SessionState.SetBool(Active, true);
                 SessionState.SetInt(Stage, 0);
+                SessionState.SetFloat(StartedAt, (float)EditorApplication.timeSinceStartup);
+                // Hooked now as well as after the Play-mode domain reload, so the run timeout also covers a Play mode
+                // that never starts.
+                EditorApplication.update -= Step;
+                EditorApplication.update += Step;
                 Debug.Log("[Capture] Entering Play mode with the live gateway.");
                 EditorApplication.EnterPlaymode();
             }
@@ -114,12 +111,17 @@ namespace SpatialTrading.Editor
                 return;
             }
             if (!SessionState.GetBool(Active, false)) { EditorApplication.update -= Step; return; }
-            if (!EditorApplication.isPlaying) return;
             var now = EditorApplication.timeSinceStartup;
-            if (_startedAt <= 0) { _startedAt = now; _stageAt = now; _stage = SessionState.GetInt(Stage, 0); }
+            if (now - SessionState.GetFloat(StartedAt, (float)now) > RunTimeoutSeconds)
+            {
+                Debug.LogError("[Capture] Capture run timed out" + (EditorApplication.isPlaying ? "." : " before Play mode started."));
+                Finish(1);
+                return;
+            }
+            if (!EditorApplication.isPlaying) return;
+            if (!_resumed) { _resumed = true; _stageAt = now; _stage = SessionState.GetInt(Stage, 0); }
             try
             {
-                if (now - _startedAt > RunTimeoutSeconds) Fail("Capture run timed out.");
                 var workspace = Object.FindFirstObjectByType<SpreadWorkspace>();
                 if (workspace == null || workspace.Market == null) return;
                 var tray = Object.FindFirstObjectByType<PalmTray>();
@@ -269,18 +271,11 @@ namespace SpatialTrading.Editor
         private static string Json(string s) =>
             "\"" + (s ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"";
 
-        /// <summary>Puts the user's gateway EditorPrefs back exactly as they were, then quits the editor.</summary>
+        /// <summary>Leaves Play mode if needed, then quits the editor. EditorPrefs were never touched.</summary>
         private static void Finish(int code)
         {
             SessionState.SetBool(Active, false);
-            if (SessionState.GetBool(Saved, false))
-            {
-                Restore(MarketDataSession.EditorUrlPref, HadUrl, OldUrl);
-                Restore(MarketDataSession.EditorTokenPref, HadToken, OldToken);
-                SessionState.SetBool(Saved, false);
-            }
-            SessionState.EraseString(OldUrl);
-            SessionState.EraseString(OldToken);
+            SessionState.EraseFloat(StartedAt);
             if (EditorApplication.isPlaying)
             {
                 SessionState.SetInt(ExitCode, code);
@@ -292,12 +287,6 @@ namespace SpatialTrading.Editor
             }
             EditorApplication.update -= Step;
             EditorApplication.Exit(code);
-        }
-
-        private static void Restore(string pref, string had, string old)
-        {
-            if (SessionState.GetBool(had, false)) EditorPrefs.SetString(pref, SessionState.GetString(old, string.Empty));
-            else EditorPrefs.DeleteKey(pref);
         }
     }
 }

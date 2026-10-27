@@ -15,6 +15,10 @@ namespace SpatialTrading.Market
     {
         public const string EditorUrlPref = "SpatialTrading.GatewayStreamUrl";
         public const string EditorTokenPref = "SpatialTrading.GatewayPairingToken";
+        /// <summary>Editor-only, in-memory override: when the editor process was started with these environment variables
+        /// (e.g. the screenshot run), they win over EditorPrefs, so the pairing token is never written to disk.</summary>
+        public const string EditorTokenVariable = "SPATIAL_PAIRING_TOKEN";
+        public const string EditorUrlVariable = "SPATIAL_GATEWAY_URL";
         public const string DeviceSettingsFile = "gateway.json";
         private const string ConfigurationRequired = "GATEWAY_CONFIGURATION_REQUIRED";
         private const float HeartbeatLimitSeconds = 15;
@@ -132,14 +136,18 @@ namespace SpatialTrading.Market
 
         public static bool AllowedGateway(string address) => GatewayStreamContract.AllowedStreamAddress(address);
 
-        /// <summary>Editor: EditorPrefs set from the Spatial Trading menu. Device: persistentDataPath/gateway.json.
-        /// Neither is part of the build.</summary>
+        /// <summary>Editor: the process environment (<see cref="EditorTokenVariable"/>/<see cref="EditorUrlVariable"/>) when the
+        /// token variable is set, otherwise EditorPrefs set from the Spatial Trading menu. Device: persistentDataPath/gateway.json.
+        /// None of these is part of the build.</summary>
         private static bool LoadSettings(out Uri url, out string token)
         {
             url = null; token = null;
 #if UNITY_EDITOR
-            var address = UnityEditor.EditorPrefs.GetString(EditorUrlPref, string.Empty);
-            var secret = UnityEditor.EditorPrefs.GetString(EditorTokenPref, string.Empty);
+            var secret = Environment.GetEnvironmentVariable(EditorTokenVariable);
+            var address = string.IsNullOrEmpty(secret)
+                ? UnityEditor.EditorPrefs.GetString(EditorUrlPref, string.Empty)
+                : Environment.GetEnvironmentVariable(EditorUrlVariable) ?? string.Empty;
+            if (string.IsNullOrEmpty(secret)) secret = UnityEditor.EditorPrefs.GetString(EditorTokenPref, string.Empty);
             if (!AllowedGateway(address) || secret.Length == 0) return false;
             url = new Uri(address); token = secret;
             return true;

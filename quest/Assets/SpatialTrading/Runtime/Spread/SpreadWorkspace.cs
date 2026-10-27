@@ -50,6 +50,9 @@ namespace SpatialTrading.Spread
         private bool _placed;
         private XRInputSubsystem _input;
         private int _readyAfterFrame;
+        /// <summary>No XR: frames the camera must hold still before the workspace pins to it.</summary>
+        private const int SettleFrames = 10;
+        private int _stillFrames;
         private bool _started;
 
         private enum MouseDrag { None, Move, Resize, Icon }
@@ -135,6 +138,8 @@ namespace SpatialTrading.Spread
         private void OnDestroy()
         {
             if (_market != null) _market.Changed -= Render;
+            if (_input != null) _input.trackingOriginUpdated -= OnTrackingOriginUpdated;
+            _input = null;
         }
 
         private void Start()
@@ -165,7 +170,8 @@ namespace SpatialTrading.Spread
             PlaceAll(false);
         }
 
-        /// <summary>True once the origin came from a tracked head (or an explicit <see cref="Recenter"/>).</summary>
+        /// <summary>True once the origin is pinned: a tracked XR head, an explicit <see cref="Recenter"/>, or (no XR) a camera
+        /// that has held still for <see cref="SettleFrames"/> frames.</summary>
         public bool IsPlaced => _placed;
 
         private void PlaceAt(bool placed)
@@ -179,8 +185,18 @@ namespace SpatialTrading.Spread
             if (_placed) return;
             if (!XRSettings.isDeviceActive)
             {
-                // No XR runtime: follow the camera until the first interaction (the rig may still be settling).
-                if (_head != null && (_head.position - _originPosition).sqrMagnitude > 1e-6f && _drag == MouseDrag.None) PlaceAt(false);
+                // No XR runtime: follow the camera while the rig settles, then pin once it has held still for
+                // SettleFrames frames (or as soon as a mouse drag starts), so later snaps and flights are never re-laid out.
+                if (_head == null) return;
+                if (_drag != MouseDrag.None) { _placed = true; return; }
+                var forward = Vector3.ProjectOnPlane(_head.forward, Vector3.up);
+                var turned = forward.sqrMagnitude > 0.01f && Vector3.Angle(forward, _originRotation * Vector3.forward) > .1f;
+                if ((_head.position - _originPosition).sqrMagnitude > 1e-6f || turned)
+                {
+                    PlaceAt(false);
+                    _stillFrames = 0;
+                }
+                else if (++_stillFrames >= SettleFrames) _placed = true;
                 return;
             }
             var input = OVRManager.GetCurrentInputSubsystem();
@@ -208,7 +224,8 @@ namespace SpatialTrading.Spread
         {
             foreach (var panel in _panels)
             {
-                if (panel == null) continue;
+                // Dismissed or mid-flight panels keep their own motion; Restore and Reset place them again.
+                if (panel == null || _layout.IsDismissed(panel.Id) || panel.IsFlying) continue;
                 panel.Place(_layout[panel.Id], WorldCenter(_layout[panel.Id]), _originRotation, animate);
             }
         }
@@ -470,11 +487,13 @@ namespace SpatialTrading.Spread
                 var panel = hit.collider.GetComponentInParent<SpreadPanel>();
                 if (panel != null && panel.IsHandle(hit.collider))
                 {
-                    _drag = MouseDrag.Resize; _dragPanel = panel; _dragTarget = panel.Handle; panel.BeginResize();
+                    if (!panel.BeginResize()) return; // mid-flight: nothing to drag
+                    _drag = MouseDrag.Resize; _dragPanel = panel; _dragTarget = panel.Handle;
                 }
                 else if (panel != null)
                 {
-                    _drag = MouseDrag.Move; _dragPanel = panel; _dragTarget = panel.transform; panel.BeginMove();
+                    if (!panel.BeginMove()) return;
+                    _drag = MouseDrag.Move; _dragPanel = panel; _dragTarget = panel.transform;
                 }
                 else if (_tray != null && _tray.TryGetIcon(hit.collider, out var icon))
                 {

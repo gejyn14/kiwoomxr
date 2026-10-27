@@ -52,6 +52,9 @@ namespace SpatialTrading.Spread
 
         private readonly List<IHand> _hands = new List<IHand>();
         private float _nextHandSearch;
+        private int _handSearches;
+        /// <summary>Hand lookups are scene-wide and allocate: at most this many, backing off 1, 2, 4, 8 s.</summary>
+        private const int MaxHandSearches = 5;
         private bool _pinned;
         private bool _palmShown;
         private float _palmUpSince = -1f, _palmAwaySince = -1f;
@@ -195,10 +198,12 @@ namespace SpatialTrading.Spread
         private bool TryPalm(out Vector3 palm)
         {
             palm = default;
-            if (Time.unscaledTime >= _nextHandSearch && _hands.Count == 0)
+            if (_hands.Count == 0 && _handSearches < MaxHandSearches && Time.unscaledTime >= _nextHandSearch)
             {
-                _nextHandSearch = Time.unscaledTime + 1f;
-                foreach (var behaviour in FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                _nextHandSearch = Time.unscaledTime + (1 << _handSearches);
+                _handSearches++;
+                // Inactive ones too: the rig's hands are found once and then just report IsConnected.
+                foreach (var behaviour in FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None))
                     if (behaviour is IHand hand && hand.Handedness == Handedness.Left) _hands.Add(hand);
             }
             foreach (var hand in _hands)
