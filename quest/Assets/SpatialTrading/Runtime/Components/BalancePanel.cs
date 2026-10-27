@@ -9,7 +9,8 @@ namespace SpatialTrading.Components
 {
     /// <summary>
     /// Balance: header with the (gateway-masked) account and the honesty label, then total, holdings and the orderable
-    /// cash. The empty state is a deliberate composition: one large centred line, the orderable cash and a thin cyan ring.
+    /// cash. The empty state is a deliberate composition: one large centred line and the orderable cash inside one thin
+    /// cyan ring.
     /// Account text is displayed only, never logged.
     /// </summary>
     public sealed class BalancePanel : HoloPanel
@@ -77,9 +78,6 @@ namespace SpatialTrading.Components
             {
                 var body = bottom - y;
                 var cy = y + body / 2f;
-                var d = Mathf.Max(0f, Mathf.Min(body - 4f, inner * .6f));
-                _ring.Radius = d / 2f;
-                Holo.Place(_ring, (w - d) / 2f, cy - d / 2f, d, d);
                 var emptyH = Holo.LineHeight(EmptySize);
                 var orderH = Holo.LineHeight(HoloStyle.MinNumber);
                 var top = cy - (emptyH + orderH) / 2f;
@@ -88,6 +86,13 @@ namespace SpatialTrading.Components
                 _orderable.alignment = TextAlignmentOptions.Midline;
                 _orderable.color = HoloStyle.Muted;
                 Holo.Place(_orderable, Pad, top + emptyH, inner, orderH);
+
+                // One thin cyan ring drawn around both lines (a capsule with fully round ends), never across them.
+                var textW = Mathf.Max(Holo.Width(_empty, view.EmptyText), Holo.Width(_orderable, view.OrderableText));
+                var ringH = Mathf.Max(0f, Mathf.Min(body - 4f, emptyH + orderH + 18f));
+                var ringW = Mathf.Max(ringH, Mathf.Min(inner, textW + 60f));
+                _ring.Radius = ringH / 2f;
+                Holo.Place(_ring, (w - ringW) / 2f, cy - ringH / 2f, ringW, ringH);
                 return;
             }
 

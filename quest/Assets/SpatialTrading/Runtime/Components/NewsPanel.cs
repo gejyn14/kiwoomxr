@@ -10,14 +10,16 @@ namespace SpatialTrading.Components
     /// <summary>
     /// News list: source tag and time on the left, the headline (up to two lines) on the right. Filing tags are amber.
     /// The number of rows follows the panel height; pass <see cref="RowsFor"/> as the max to <see cref="NewsView.Rank"/>.
+    /// The header carries <see cref="NewsView.Status"/> so an unavailable feed reads differently from an empty one.
     /// </summary>
     public sealed class NewsPanel : HoloPanel
     {
         private const float Pitch = 60f;
-        private const float TagW = 70f;
+        private const float TagW = 84f; // "연합뉴스" at 16 mm plus chip margins
         private const float HeadlineSize = 18f;
 
         [SerializeField] private TextMeshProUGUI _title;
+        [SerializeField] private TextMeshProUGUI _status;
         [SerializeField] private TextMeshProUGUI _empty;
         [SerializeField] private RectTransform _rowsRoot;
         private readonly List<Row> _rows = new List<Row>();
@@ -42,16 +44,21 @@ namespace SpatialTrading.Components
         {
             _title = Holo.Text(transform, "Title", Font, TitleSize, HoloStyle.Ink);
             _title.text = "뉴스";
+            _status = Holo.Text(transform, "Status", Font, HoloStyle.MinText, HoloStyle.Muted, TextAlignmentOptions.MidlineRight);
             _empty = Holo.Text(transform, "Empty", Font, 26f, HoloStyle.Muted, TextAlignmentOptions.Center);
             _rowsRoot = Holo.Node(transform, "Rows");
         }
 
-        public void Render(IReadOnlyList<NewsRowView> rows, PanelRect rect)
+        /// <param name="status">The feed's honesty label, <see cref="NewsView.Status"/>.</param>
+        public void Render(IReadOnlyList<NewsRowView> rows, string status, PanelRect rect)
         {
             EnsureBuilt();
             var size = Size(rect);
             float w = size.x, h = size.y, inner = w - 2 * Pad;
-            Holo.Place(_title, Pad, Top, inner, HeaderH);
+            var titleW = Holo.Width(_title, _title.text) + 4f;
+            Holo.Place(_title, Pad, Top, titleW, HeaderH);
+            Holo.Place(_status, Pad + titleW + 12f, Top, inner - titleW - 12f, HeaderH);
+            _status.text = status ?? string.Empty;
             Rule(w, Top + HeaderH + 3f);
 
             var y = BodyTop;

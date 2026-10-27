@@ -26,6 +26,9 @@ namespace SpatialTrading.Components
         private const float AxisBottom = 30f;
         private const float AxisText = HoloStyle.MinText + 2f;
         private static readonly float[] TickAt = { .125f, .375f, .625f, .875f };
+        private const decimal MinSpan = 0.0001m;
+        /// <summary>A rising body is never shorter than this, so it always reads as hollow.</summary>
+        private const float MinHollow = 2f * Outline + 1f;
 
         /// <summary>Font for the axis labels; the owning panel injects it.</summary>
         public TMP_FontAsset Font;
@@ -36,6 +39,8 @@ namespace SpatialTrading.Components
         private ChartDetail _detail = ChartDetail.Candles;
         private bool _legacy;
         private readonly List<TextMeshProUGUI> _labels = new List<TextMeshProUGUI>();
+        private readonly int[] _timeAt = new int[3];
+        private bool _purged;
 
         public ChartDetail Detail => _detail;
 
@@ -95,9 +100,10 @@ namespace SpatialTrading.Components
                 high = Math.Max(high, _detail == ChartDetail.Line ? c.Close : c.High);
                 maxVolume = Math.Max(maxVolume, c.Volume ?? 0);
             }
-            var padding = Math.Max((high - low) * .08m, high * .001m);
+            var padding = Math.Max((high - low) * .08m, Math.Abs(high) * .001m);
             w.Low = low - padding;
             w.High = high + padding;
+            if (w.High - w.Low < MinSpan) { w.Low -= MinSpan / 2m; w.High += MinSpan / 2m; } // never divide by zero
             w.MaxVolume = maxVolume;
             return true;
         }
@@ -151,7 +157,7 @@ namespace SpatialTrading.Components
             var values = _series.Candles;
             var cyan = HoloStyle.Cyan;
             var step = w.Step;
-            var body = Mathf.Max(2f, step * .7f);
+            var body = Mathf.Max(MinHollow, step * .7f);
             var wick = Mathf.Clamp(step * .18f, 1.2f, 2f);
             for (var i = w.Start; i < values.Count; i++)
             {
@@ -166,9 +172,15 @@ namespace SpatialTrading.Components
                 var top = Mathf.Max(Y(w, c.Open), Y(w, c.Close));
                 var bottom = Mathf.Min(Y(w, c.Open), Y(w, c.Close));
                 var left = x - body / 2f;
-                if (rising && top - bottom >= 2f * Outline + 1f)
+                if (rising)
                 {
-                    // Hollow: wick stops at the body, four outline edges.
+                    // Always hollow: short bodies grow to MinHollow around their centre; the wick stops at the body.
+                    if (top - bottom < MinHollow)
+                    {
+                        var mid = (top + bottom) / 2f;
+                        top = mid + MinHollow / 2f;
+                        bottom = mid - MinHollow / 2f;
+                    }
                     Quad(mesh, x - wick / 2f, yLow, wick, bottom - yLow, cyan);
                     Quad(mesh, x - wick / 2f, top, wick, yHigh - top, cyan);
                     Quad(mesh, left, bottom, body, Outline, cyan);
@@ -178,7 +190,7 @@ namespace SpatialTrading.Components
                 }
                 else
                 {
-                    // Filled (falling, or a rising bar too short to show a hollow interior).
+                    // Falling: filled.
                     Quad(mesh, x - wick / 2f, yLow, wick, Mathf.Max(1f, yHigh - yLow), cyan);
                     var h = Mathf.Max(Outline, top - bottom);
                     Quad(mesh, left, (top + bottom) / 2f - h / 2f, body, h, cyan);
@@ -188,6 +200,13 @@ namespace SpatialTrading.Components
 
         private void UpdateLabels()
         {
+            if (!_purged)
+            {
+                // Labels from an earlier instance (e.g. saved in a scene) are not tracked by the pool; drop them.
+                _purged = true;
+                for (var k = transform.childCount - 1; k >= 0; k--)
+                    if (transform.GetChild(k).GetComponent<TMP_Text>() != null) Holo.Destroy(transform.GetChild(k).gameObject);
+            }
             var w = default(Window);
             var show = _detail == ChartDetail.CandlesWithAxes && TryWindow(out w);
             if (!show)
@@ -218,7 +237,8 @@ namespace SpatialTrading.Components
             var values = _series.Candles;
             var first = w.Start;
             var lastIndex = values.Count - 1;
-            int[] at = { first, first + (lastIndex - first) / 2, lastIndex };
+            var at = _timeAt;
+            at[0] = first; at[1] = first + (lastIndex - first) / 2; at[2] = lastIndex;
             for (var k = 0; k < 3; k++)
             {
                 var l = _labels[TickAt.Length + k];

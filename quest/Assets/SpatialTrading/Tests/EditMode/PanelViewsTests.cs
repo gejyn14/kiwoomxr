@@ -184,6 +184,47 @@ namespace SpatialTrading.Tests
         }
 
         [Test]
+        public void OrderTypeButtonsCarryTheirTypeInDisplayOrder()
+        {
+            var t = new OrderTicket();
+            t.Select(TraderCatalog.Samsung, TradingSession.KrxRegular);
+            var v = OrderView.From(t, null, TradingSession.KrxRegular);
+            var expected = new[] { OrderType.Limit, OrderType.Market, OrderType.BestLimit, OrderType.PriorityLimit, OrderType.Conditional };
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.That(v.Types[i].Type, Is.EqualTo(expected[i]));
+                Assert.That(v.Types[i].Label, Is.EqualTo(OrderTypeTable.DisplayName(expected[i])));
+            }
+        }
+
+        [Test]
+        public void OrderViewExposesLocksWithoutTheGlyph()
+        {
+            var t = new OrderTicket();
+            t.Select(TraderCatalog.Samsung, TradingSession.KrxRegular);
+            var v = OrderView.From(t, null, TradingSession.KrxRegular);
+            Assert.That(v.SellLocked, Is.True);
+            Assert.That(v.QuantityLocked, Is.True);
+            Assert.That(v.SellTabLabel, Is.EqualTo("매도"));
+            Assert.That(v.QuantityLabel, Is.EqualTo("1주"));
+            Assert.That(v.SellTabText, Is.EqualTo("매도 🔒"));
+            Assert.That(v.QuantityText, Is.EqualTo("1주 🔒"));
+        }
+
+        [Test]
+        public void NewsStatusSeparatesUnavailableFeedFromEmptyFeed()
+        {
+            var empty = Live(new NewsFeed(new NewsItem[0]));
+            Assert.That(NewsView.Status(empty), Is.EqualTo("실시간"));
+            Assert.That(NewsView.Rank(empty, "005930", Now).Count, Is.EqualTo(0));
+            var down = new Observation<NewsFeed>(null, DataState.Unavailable, DataOrigin.Kiwoom, null);
+            Assert.That(NewsView.Status(down), Is.EqualTo("데이터 이용 불가"));
+            Assert.That(NewsView.Status(null), Is.EqualTo("데이터 이용 불가"));
+            var closed = new Observation<NewsFeed>(new NewsFeed(new NewsItem[0]), DataState.Stale, DataOrigin.Kiwoom, Now, Now, StatusText.MarketClosed);
+            Assert.That(NewsView.Status(closed), Is.EqualTo("장 마감"));
+        }
+
+        [Test]
         public void NewsTimeTextUsesGivenNowNotReceiptTime()
         {
             var feed = new NewsFeed(new[] { Item("오늘 기사", 9, 10, new string[0]) });

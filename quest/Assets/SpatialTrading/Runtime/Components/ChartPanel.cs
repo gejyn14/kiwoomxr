@@ -77,25 +77,45 @@ namespace SpatialTrading.Components
             var size = Size(rect);
             float w = size.x, h = size.y;
 
-            // Row 1: name · toggles.
+            // Row 1: name [· price · change when compact] …… toggles.
             Holo.Place(_daily, w - Pad - ToggleW, Top, ToggleW, ToggleH);
             Holo.Place(_fourHour, w - Pad - 2 * ToggleW - 6f, Top, ToggleW, ToggleH);
-            Holo.Place(_title, Pad, Top, w - 2 * Pad - 2 * ToggleW - 14f, HeaderH);
-            _title.text = view.Title;
             StyleToggle(_fourHour, _fourHourLabel, interval == FourHour);
             StyleToggle(_daily, _dailyLabel, interval == Daily);
-
-            // Row 2: price, signed change on the same baseline.
-            var y = Top + HeaderH + 2f;
-            var priceH = Holo.LineHeight(PriceSize);
+            var rowW = w - 2 * Pad - 2 * ToggleW - 14f;
+            _title.text = view.Title;
             _price.text = view.PriceText;
-            var priceW = Mathf.Min(Holo.Width(_price, view.PriceText) + 4f, (w - 2 * Pad) * .6f);
-            Holo.Place(_price, Pad, y, priceW, priceH);
-            Holo.Place(_change, Pad + priceW + 10f, y, w - 2 * Pad - priceW - 10f, priceH);
             _change.text = view.ChangeText;
-            y += priceH;
+            float y;
+            if (rect.Height <= 4)
+            {
+                // Compact: one header row (price and change shrink last, the name first), then the honesty label.
+                _price.fontSize = HoloStyle.MinNumber;
+                var priceW = Mathf.Min(Holo.Width(_price, view.PriceText) + 4f, rowW);
+                var changeW = Mathf.Min(Holo.Width(_change, view.ChangeText) + 4f, Mathf.Max(0f, rowW - priceW - 8f));
+                var titleW = Mathf.Min(Holo.Width(_title, view.Title) + 4f, Mathf.Max(0f, rowW - priceW - changeW - 16f));
+                var rowH = Holo.LineHeight(HoloStyle.MinNumber); // fits the 22 mm price line box
+                Holo.Place(_title, Pad, Top, titleW, rowH);
+                Holo.Place(_price, Pad + titleW + 8f, Top, priceW, rowH);
+                Holo.Place(_change, Pad + titleW + 8f + priceW + 8f, Top, changeW, rowH);
+                Holo.Show(_title, titleW > 24f);
+                y = Top + rowH;
+            }
+            else
+            {
+                Holo.Show(_title, true);
+                Holo.Place(_title, Pad, Top, rowW, HeaderH);
+                // Row 2: price, signed change on the same baseline.
+                y = Top + HeaderH + 2f;
+                _price.fontSize = PriceSize;
+                var priceH = Holo.LineHeight(PriceSize);
+                var priceW = Mathf.Min(Holo.Width(_price, view.PriceText) + 4f, (w - 2 * Pad) * .6f);
+                Holo.Place(_price, Pad, y, priceW, priceH);
+                Holo.Place(_change, Pad + priceW + 10f, y, w - 2 * Pad - priceW - 10f, priceH);
+                y += priceH;
+            }
 
-            // Row 3: honesty label.
+            // Honesty label.
             var statusH = Holo.LineHeight(HoloStyle.MinText);
             Holo.Place(_status, Pad, y, w - 2 * Pad, statusH);
             _status.text = view.Status;

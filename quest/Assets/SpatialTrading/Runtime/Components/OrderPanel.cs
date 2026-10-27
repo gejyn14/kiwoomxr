@@ -136,6 +136,7 @@ namespace SpatialTrading.Components
         }
 
         private int _wiredTypes;
+        private Component[] _idleParts;
 
         private void WireType(int index)
         {
@@ -171,26 +172,31 @@ namespace SpatialTrading.Components
             var compact = _rect.Height < 6;
             var tiny = _rect.Height < 5;
 
-            // Header: 주문 …… badge
-            Holo.Place(_title, Pad, Top, 90f, HeaderH);
+            // Header: 주문 [매수|매도🔒 when compact] …… badge
+            var titleW = Holo.Width(_title, _title.text) + 4f;
+            Holo.Place(_title, Pad, Top, titleW, HeaderH);
+            _sellText.text = view.SellTabLabel;
+            var sellTextW = Holo.Width(_sellText, view.SellTabLabel);
+            var headerRight = Pad + titleW;
+            if (compact)
+            {
+                // Slim tab indicator in the header so the sell lock stays visible at every legal size.
+                var buyW = Holo.Width(_buyText, _buyText.text) + 16f;
+                var sellW = sellTextW + 16f + (view.SellLocked ? 22f : 0f);
+                PlaceTabs(headerRight + 8f, Top + 2f, buyW, sellW, HeaderH - 4f, 4f, sellTextW, view.SellLocked);
+                headerRight += 8f + buyW + 4f + sellW;
+            }
             _badgeText.text = view.Badge;
-            var badgeW = Mathf.Min(Holo.Width(_badgeText, view.Badge) + 16f, inner * .6f);
+            var badgeW = Mathf.Max(0f, Mathf.Min(Holo.Width(_badgeText, view.Badge) + 16f, w - Pad - headerRight - 8f));
             Holo.Place(_badge, w - Pad - badgeW, Top + 2f, badgeW, HeaderH - 4f);
             Rule(w, Top + HeaderH + 3f);
             var y = Top + HeaderH + 10f;
 
-            // Tabs: 매수 | 매도 (locked)
-            Holo.Show(_buyTab, !compact);
-            Holo.Show(_sellTab, !compact);
+            // Full tabs row: 매수 | 매도 (locked)
             if (!compact)
             {
                 var half = (inner - 8f) / 2f;
-                Holo.Place(_buyTab, Pad, y, half, TabH);
-                Holo.Place(_sellTab, Pad + half + 8f, y, half, TabH);
-                _sellText.text = Holo.StripLock(view.SellTabText, out var sellLocked);
-                Holo.Show(_sellLock, sellLocked);
-                var sellW = Holo.Width(_sellText, _sellText.text);
-                Holo.Place(_sellLock, half / 2f + sellW / 2f + 8f, (TabH - 20f) / 2f, 16f, 20f);
+                PlaceTabs(Pad, y, half, half, TabH, 8f, sellTextW, view.SellLocked);
                 y += TabH + RowGap;
             }
 
@@ -210,7 +216,8 @@ namespace SpatialTrading.Components
             if (showTypes) y += TypeH + RowGap;
 
             // Idle: price · quantity, then 매수 준비. Preflight: the preview card replaces both.
-            foreach (var c in new Component[] { _priceKey, _price, _qtyKey, _qty, _qtyLock, _prepare }) Holo.Show(c, !preflight);
+            if (_idleParts == null) _idleParts = new Component[] { _priceKey, _price, _qtyKey, _qty, _prepare };
+            foreach (var c in _idleParts) Holo.Show(c, !preflight);
             Holo.Show(_card, preflight);
             if (!preflight)
             {
@@ -220,10 +227,11 @@ namespace SpatialTrading.Components
                 Holo.Place(_price, Pad + 52f, y, priceW - 60f, valueH);
                 _price.text = view.PriceText;
                 Holo.Place(_qtyKey, Pad + priceW, y, 52f, valueH);
-                _qty.text = Holo.StripLock(view.QuantityText, out var qtyLocked);
+                _qty.text = view.QuantityLabel;
+                var qtyLocked = view.QuantityLocked;
                 var qtyW = Mathf.Min(Holo.Width(_qty, _qty.text) + 4f, inner - priceW - 52f - 24f);
                 Holo.Place(_qty, Pad + priceW + 52f, y, qtyW, valueH);
-                Holo.Show(_qtyLock, qtyLocked);
+                Holo.Show(_qtyLock, qtyLocked);  // hidden with the row in preflight (below)
                 Holo.Place(_qtyLock, Pad + priceW + 52f + qtyW + 6f, y + (valueH - 20f) / 2f, 16f, 20f);
                 y += valueH + RowGap;
 
@@ -233,6 +241,7 @@ namespace SpatialTrading.Components
             }
             else
             {
+                Holo.Show(_qtyLock, false);
                 DrawCard(inner, Mathf.Min(CardH, h - Top - y), y);
             }
 
@@ -274,13 +283,24 @@ namespace SpatialTrading.Components
             StyleAction(_confirm, _confirmText, _view.PrepareEnabled);
         }
 
+        private void PlaceTabs(float x, float y, float buyW, float sellW, float h, float gap, float sellTextW, bool sellLocked)
+        {
+            Holo.Place(_buyTab, x, y, buyW, h);
+            Holo.Place(_sellTab, x + buyW + gap, y, sellW, h);
+            Holo.Show(_sellLock, sellLocked);
+            // With a lock, the text centres in the tab minus 24 mm on the right and the lock follows the text.
+            var rightMargin = sellLocked ? 24f : 6f;
+            _sellText.margin = new Vector4(6f, 0f, rightMargin, 0f);
+            var textRight = (6f + sellW - rightMargin) / 2f + sellTextW / 2f;
+            Holo.Place(_sellLock, textRight + 6f, (h - 20f) / 2f, 16f, 20f);
+        }
+
         private void OnType(int index)
         {
             if (_view == null || index >= _view.Types.Count) return;
             var b = _view.Types[index];
             if (!b.Enabled) { ShowToast(b.Reason); return; }
-            foreach (OrderType t in Enum.GetValues(typeof(OrderType)))
-                if (OrderTypeTable.DisplayName(t) == b.Label) { TypeChosen?.Invoke(t); return; }
+            TypeChosen?.Invoke(b.Type);
         }
 
         private void OnPrepare()

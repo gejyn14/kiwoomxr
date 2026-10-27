@@ -39,9 +39,6 @@ namespace SpatialTrading.Components
     /// <summary>Code-built UI pieces in the same top-left, millimetre convention the scene generator uses.</summary>
     internal static class Holo
     {
-        /// <summary>The view strings carry U+1F512, which NotoSansKR has no glyph for; it is drawn as an icon instead.</summary>
-        public const string LockGlyph = "\U0001F512";
-
         public static RectTransform Node(Transform parent, string name)
         {
             var go = new GameObject(name, typeof(RectTransform));
@@ -103,9 +100,12 @@ namespace SpatialTrading.Components
             return g;
         }
 
+        /// <summary>Restyles a card; a no-op (no mesh rebuild) when nothing changed.</summary>
         public static void Paint(SpatialCardGraphic g, Color fill, Color edge, float edgeWidth)
         {
-            g.BottomColor = new Color(fill.r * .55f, fill.g * .55f, fill.b * .6f, fill.a);
+            var bottom = new Color(fill.r * .55f, fill.g * .55f, fill.b * .6f, fill.a);
+            if (g.color == fill && g.BottomColor == bottom && g.EdgeColor == edge && Mathf.Approximately(g.EdgeWidth, edgeWidth)) return;
+            g.BottomColor = bottom;
             g.EdgeColor = edge;
             g.EdgeWidth = edgeWidth;
             g.color = fill;
@@ -148,7 +148,7 @@ namespace SpatialTrading.Components
             });
         }
 
-        /// <summary>A 16 x 20 mm padlock: outlined shackle over a filled body.</summary>
+        /// <summary>A 16 x 20 mm padlock (outlined shackle over a filled body); NotoSansKR has no U+1F512 glyph.</summary>
         public static RectTransform LockIcon(Transform parent, string name, Color color)
         {
             var root = Node(parent, name);
@@ -170,12 +170,6 @@ namespace SpatialTrading.Components
                 g.color = g.name == "Body" ? color : Color.clear;
                 g.SetVerticesDirty();
             }
-        }
-
-        public static string StripLock(string text, out bool locked)
-        {
-            locked = !string.IsNullOrEmpty(text) && text.Contains(LockGlyph);
-            return locked ? text.Replace(LockGlyph, string.Empty).Trim() : text ?? string.Empty;
         }
 
         public static void Show(Component c, bool on)

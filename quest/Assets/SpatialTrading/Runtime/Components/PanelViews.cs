@@ -184,6 +184,10 @@ namespace SpatialTrading.Components
     {
         static readonly TimeSpan Kst = TimeSpan.FromHours(9);
 
+        /// <summary>Honesty label for the feed, so an unavailable feed reads differently from an empty one.</summary>
+        public static string Status(Observation<NewsFeed> feed) =>
+            StatusText.State(feed?.State ?? DataState.Unavailable, feed?.Reason);
+
         /// <summary>
         /// Items mentioning the selected code first, newest first inside each group. "Today" for the time text is the
         /// caller's <paramref name="now"/> (compared in KST), never the receipt time, so stale items read as dates.
@@ -245,12 +249,13 @@ namespace SpatialTrading.Components
 
     public sealed class OrderTypeButtonView
     {
+        public OrderType Type { get; }
         public string Label { get; }
         public bool Enabled { get; }
         public bool Selected { get; }
         public string Reason { get; }
-        public OrderTypeButtonView(string label, bool enabled, bool selected, string reason)
-        { Label = label; Enabled = enabled; Selected = selected; Reason = reason; }
+        public OrderTypeButtonView(OrderType type, string label, bool enabled, bool selected, string reason)
+        { Type = type; Label = label; Enabled = enabled; Selected = selected; Reason = reason; }
     }
 
     public sealed class OrderView
@@ -260,14 +265,23 @@ namespace SpatialTrading.Components
 
         public IReadOnlyList<OrderTypeButtonView> Types { get; }
         public string PriceText { get; }
-        public string QuantityText => "1주 🔒";
-        public string SellTabText => "매도 🔒";
+        /// <summary>Glyph-free labels for renderers whose font lacks 🔒; the lock state is in the bools below.</summary>
+        public string QuantityLabel => "1주";
+        public string SellTabLabel => "매도";
+        public bool QuantityLocked { get; }
+        public bool SellLocked { get; }
+        public string QuantityText => QuantityLocked ? QuantityLabel + " 🔒" : QuantityLabel;
+        public string SellTabText => SellLocked ? SellTabLabel + " 🔒" : SellTabLabel;
         public bool PrepareEnabled { get; }
         public string LockReason { get; }
         public string Badge { get; }
 
-        OrderView(IReadOnlyList<OrderTypeButtonView> types, string price, bool prepare, string lockReason, string badge)
-        { Types = types; PriceText = price; PrepareEnabled = prepare; LockReason = lockReason; Badge = badge; }
+        OrderView(IReadOnlyList<OrderTypeButtonView> types, string price, bool prepare, string lockReason, string badge,
+            bool quantityLocked, bool sellLocked)
+        {
+            Types = types; PriceText = price; PrepareEnabled = prepare; LockReason = lockReason; Badge = badge;
+            QuantityLocked = quantityLocked; SellLocked = sellLocked;
+        }
 
         static Tuple<string, string> Stale<T>(Observation<T> o, string what) where T : class
         {
@@ -285,7 +299,7 @@ namespace SpatialTrading.Components
         {
             if (ticket == null) throw new ArgumentNullException(nameof(ticket));
             var locked = ticket.State == TicketState.Locked;
-            var types = Order.Select(t => new OrderTypeButtonView(OrderTypeTable.DisplayName(t),
+            var types = Order.Select(t => new OrderTypeButtonView(t, OrderTypeTable.DisplayName(t),
                 !locked && OrderTypeTable.Enabled(t, session), ticket.Type == t,
                 locked ? ticket.LockReason : OrderTypeTable.DisabledReason(t, session))).ToList().AsReadOnly();
             var ask1 = book?.Value?.Asks.FirstOrDefault(l => l.Rank == 1);
@@ -299,7 +313,8 @@ namespace SpatialTrading.Components
             var badge = ticket.State == TicketState.Preflight ? "PREFLIGHT" : locked ? "LOCKED" : "READY";
             var lockReason = ticket.LockReason;
             if (!locked && bad != null) { badge = bad.Item1; lockReason = bad.Item2; }
-            return new OrderView(types, price, prepare, lockReason, badge);
+            // The ticket fixes the quantity at 1 share; sell is locked by the ticket.
+            return new OrderView(types, price, prepare, lockReason, badge, quantityLocked: true, sellLocked: ticket.SellLocked);
         }
     }
 }
