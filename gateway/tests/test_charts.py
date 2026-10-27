@@ -95,3 +95,36 @@ def test_index_tick_updates_index_quote_and_daily_close():
     assert q.state == DataState.LIVE and q.value.last_price == Decimal("2645.12")
     daily = s.observation("001", "1D", CID, True, None)[1]
     assert daily.value.candles[-1].close == Decimal("2645.12")
+
+
+def test_adjustment_label_by_instrument():
+    s = store(Clock(kst(10, 0)))
+    s.seed("001", Market.KRX, "1D", [bar(kst(9, 0), "2640.5")])
+    s.seed("001", Market.KRX, "4H", [bar(kst(9, 0), "2640.5")])
+    s.seed("005930", Market.KRX, "1D", [bar(kst(9, 0), 224500)])
+    assert s.observation("001", "1D", CID, True, None)[1].value.adjustment == "unadjusted"
+    assert s.observation("001", "4H", CID, True, None)[1].value.adjustment == "unadjusted"
+    assert s.observation("005930", "1D", CID, True, None)[1].value.adjustment == "adjusted"
+
+
+def test_out_of_order_stock_trade_keeps_close_but_widens_range():
+    s = store(Clock(kst(10, 5)))
+    s.seed("005930", Market.KRX, "1D", [bar(kst(9, 0), 224500)])
+    s.seed("005930", Market.KRX, "4H", [bar(kst(9, 0), 224500)])
+    s.apply_trade(trade(kst(10, 3), 225000))
+    s.apply_trade(trade(kst(10, 1), 223000))
+    for interval in ("1D", "4H"):
+        c = s.observation("005930", interval, CID, True, None)[1].value.candles[-1]
+        assert c.close == Decimal("225000") and c.low == Decimal("223000") and c.high == Decimal("225000")
+
+
+def test_out_of_order_index_tick_keeps_close_but_widens_range():
+    s = store(Clock(kst(10, 5)))
+    s.seed("001", Market.KRX, "1D", [bar(kst(9, 0), "2640.5")])
+    s.seed("001", Market.KRX, "4H", [bar(kst(9, 0), "2640.5")])
+    s.apply_index("001", Decimal("2650"), None, None, kst(10, 3))
+    s.apply_index("001", Decimal("2630"), None, None, kst(10, 1))
+    for interval in ("1D", "4H"):
+        c = s.observation("001", interval, CID, True, None)[1].value.candles[-1]
+        assert c.close == Decimal("2650") and c.low == Decimal("2630") and c.high == Decimal("2650")
+    assert s.index_quote("001", CID, True, None).value.last_price == Decimal("2650")

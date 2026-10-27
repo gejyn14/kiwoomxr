@@ -6,7 +6,7 @@ form an invalid CandleSeries are dropped whole, so existing state is never corru
 
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -24,7 +24,6 @@ log = logging.getLogger(__name__)
 
 Interval = Literal["1D", "4H"]
 MAX_BARS = 120
-_ADJUSTMENT = {"1D": "adjusted", "4H": "unadjusted"}
 
 
 @dataclass
@@ -32,6 +31,7 @@ class _Series:
     bars: list[Bar]
     received: datetime
     source: datetime | None = None  # latest live tick folded in; None while only REST-seeded
+    tick_at: dict[datetime, datetime] = field(default_factory=dict)  # bar start -> latest tick time
 
 
 def _is_index(code: str) -> bool:
@@ -42,10 +42,10 @@ def _key(start: datetime, interval: str) -> str:
     return start.astimezone(KST).strftime("%Y%m%d" if interval == "1D" else "%Y%m%d%H%M")
 
 
-def _series(bars: Sequence[Bar], interval: str) -> CandleSeries:
+def _series(bars: Sequence[Bar], interval: str, code: str) -> CandleSeries:
     last = len(bars) - 1
     return CandleSeries(
-        interval=interval, adjustment=_ADJUSTMENT[interval],
+        interval=interval, adjustment="adjusted" if interval == "1D" and not _is_index(code) else "unadjusted",
         candles=tuple(Candle(period_key=_key(b.start, interval), open=b.open, high=b.high, low=b.low,
                              close=b.close, volume=b.volume, complete=i != last)
                       for i, b in enumerate(bars)))
@@ -77,7 +77,7 @@ class ChartStore:
             now = self._clock()
             ordered = sorted(bars, key=lambda b: b.start) if interval == "1D" else four_hour(bars, market)
             ordered = ordered[-MAX_BARS:]
-            _series(ordered, interval)
+            _series(ordered, interval, code)
         except Exception as error:
             log.warning("chart seed dropped: %s", type(error).__name__)
             return
@@ -85,7 +85,8 @@ class ChartStore:
         if old is not None and old.source is not None and ordered:  # keep live bars newer than the seed
             newer = [b for b in old.bars if b.start > ordered[-1].start]
             ordered = (ordered + newer)[-MAX_BARS:]
-        self._series[(code, market, interval)] = _Series(ordered, now, old.source if old else None)
+        self._series[(code, market, interval)] = _Series(
+            ordered, now, old.source if old else None, dict(old.tick_at) if old else {})
         if interval == "4H":
             self._touch_4h(code, market, now)
 
@@ -131,20 +132,27 @@ class ChartStore:
         if state is None or not state.bars:
             return False  # a lone tick must not masquerade as history; wait for the REST seed
         bars = list(state.bars)
+        ticks = dict(state.tick_at)
         if start == bars[-1].start:
             b = bars[-1]
             vol = b.volume
             if volume is not None:
                 vol = (b.volume or 0) + volume if add else max(b.volume or 0, volume)
-            bars[-1] = replace(b, high=max(b.high, price), low=min(b.low, price), close=price, volume=vol)
+            last = ticks.get(start)
+            fresh = last is None or at >= last
+            bars[-1] = replace(b, high=max(b.high, price), low=min(b.low, price),
+                               close=price if fresh else b.close, volume=vol)
+            if fresh:
+                ticks[start] = at
         elif start > bars[-1].start:
             bars.append(Bar(start, price, price, price, price, volume or 0))
+            ticks[start] = at
             bars = bars[-MAX_BARS:]
         else:
             return False  # stale tick for an already-closed period
-        _series(bars, interval)  # validate before commit
+        _series(bars, interval, code)  # validate before commit
         source = at if state.source is None else max(state.source, at)
-        self._series[(code, market, interval)] = _Series(bars, now, source)
+        self._series[(code, market, interval)] = _Series(bars, now, source, ticks)
         if interval == "4H":
             self._touch_4h(code, market, now)
         return True
@@ -166,7 +174,7 @@ class ChartStore:
             if market is None and code in self._last_4h:
                 market = self._last_4h[code][1]
         state = self._series.get((code, market, interval)) if market else None
-        value = _series(state.bars, interval) if state and state.bars else None
+        value = _series(state.bars, interval, code) if state and state.bars else None
         obs = observe(CandleSeries, code, cid, value=value, received=state.received if state else None,
                       source=(state.source or (state.bars[-1].start if state.bars else None)) if state else None,
                       connected=connected, reason=reason, closed=closed, watched=self._watched(code))
