@@ -14,8 +14,11 @@ namespace SpatialTrading.Domain
         // Arbitrary fixture values, deliberately static. Never called LIVE or used for orders.
         public static decimal ReferencePrice(InstrumentRef instrument)
         {
-            if (Samsung.Equals(instrument)) return 71200m;
-            if (SkHynix.Equals(instrument)) return 182000m;
+            if (instrument != null && instrument.Code == "005930") return 71200m;
+            if (instrument != null && instrument.Code == "000660") return 182000m;
+            // Fixture levels for the trader spread preview only; never a market reference.
+            if (instrument != null && instrument.Code == "039490") return 165000m;
+            if (instrument != null && instrument.Code == "001") return 2600m;
             throw new ArgumentException("No synthetic fixture for this instrument.", nameof(instrument));
         }
     }

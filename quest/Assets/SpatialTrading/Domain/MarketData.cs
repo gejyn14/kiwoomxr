@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 namespace SpatialTrading.Domain
 {
     public enum DataState { Loading, Live, Delayed, Stale, Disconnected, Unavailable, Error }
-    public enum DataOrigin { Synthetic, Kiwoom }
+    public enum DataOrigin { Synthetic, Kiwoom, News }
 
     public sealed class Observation<T> where T : class
     {

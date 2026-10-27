@@ -37,6 +37,90 @@ namespace SpatialTrading.Tests
             Assert.That(update.Book, Is.Null);
         }
 
+        private static string Envelope(string capability, string code, string origin, string value, string interval = null) =>
+            new JObject
+            {
+                ["type"] = "observation", ["capability"] = capability, ["market"] = null,
+                ["observation"] = new JObject
+                {
+                    ["instrument_code"] = code, ["state"] = "LIVE", ["origin"] = origin, ["value"] = JObject.Parse(value),
+                    ["received_at"] = "2026-09-17T15:00:00+09:00", ["source_at"] = "2026-09-17T15:00:00+09:00",
+                    ["reason"] = null, ["correlation_id"] = Sub.ToString()
+                }
+            }.ToString();
+
+        private const string DailyValue = "{\"interval\":\"1D\",\"adjustment\":\"ADJUSTED\",\"complete_history\":false,\"candles\":[" +
+            "{\"period_key\":\"20260917\",\"open\":\"100\",\"high\":\"110\",\"low\":\"90\",\"close\":\"105\",\"volume\":\"10\",\"complete\":true}]}";
+        private static string BalanceValue(string account, string holdings = "[]") =>
+            "{\"account\":\"" + account + "\",\"total_evaluation\":\"5000000\",\"total_profit\":null,\"total_profit_rate\":\"1.5\"," +
+            "\"orderable_cash\":\"1032000\",\"holdings\":" + holdings + "}";
+        private const string NewsValue = "{\"items\":[{\"kind\":\"FILING\",\"source\":\"DART\",\"title\":\"Report\"," +
+            "\"published_at\":\"2026-09-17T09:00:00+09:00\",\"mentions\":[\"005930\"],\"filing_type\":\"A001\"}]}";
+
+        [Test]
+        public void ParsesDailyCandlesForIndexCode()
+        {
+            var update = (StreamUpdate)GatewayStreamContract.Parse(Envelope("candles_1d", "001", "KIWOOM", DailyValue), Sub);
+            Assert.That(update.Capability, Is.EqualTo(StreamCapability.CandlesDaily));
+            Assert.That(update.Code, Is.EqualTo("001"));
+            Assert.That(update.Candles.Value.Interval, Is.EqualTo("1D"));
+            var four = (StreamUpdate)GatewayStreamContract.Parse(Envelope("candles_4h", "005930", "KIWOOM", DailyValue.Replace("1D", "4H")), Sub);
+            Assert.That(four.Capability, Is.EqualTo(StreamCapability.CandlesFourHour));
+        }
+
+        [Test]
+        public void ParsesBalanceWithMaskedAccountAndEmptyHoldings()
+        {
+            var update = (StreamUpdate)GatewayStreamContract.Parse(Envelope("balance", "ACCOUNT", "KIWOOM", BalanceValue("123*****90")), Sub);
+            Assert.That(update.Capability, Is.EqualTo(StreamCapability.Balance));
+            Assert.That(update.Balance.Value.Holdings.Count, Is.EqualTo(0));
+            Assert.That(update.Balance.Value.OrderableCash, Is.EqualTo(1032000m));
+            Assert.That(update.Balance.Value.TotalProfit, Is.Null);
+        }
+
+        [Test]
+        public void ParsesHoldings()
+        {
+            var h = "[{\"code\":\"005930\",\"name\":\"삼성전자\",\"quantity\":\"1\",\"average_price\":\"70000\",\"current_price\":null,\"profit\":\"-5\",\"profit_rate\":null}]";
+            var update = (StreamUpdate)GatewayStreamContract.Parse(Envelope("balance", "ACCOUNT", "KIWOOM", BalanceValue("123*****90", h)), Sub);
+            var holding = update.Balance.Value.Holdings[0];
+            Assert.That(holding.Quantity, Is.EqualTo(1L));
+            Assert.That(holding.AveragePrice, Is.EqualTo(70000m));
+            Assert.That(holding.CurrentPrice, Is.Null);
+        }
+
+        [Test]
+        public void RejectsUnmaskedAccount()
+        {
+            Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(Envelope("balance", "ACCOUNT", "KIWOOM", BalanceValue("1234567890")), Sub));
+        }
+
+        [Test]
+        public void ParsesNewsWithNewsOrigin()
+        {
+            var update = (StreamUpdate)GatewayStreamContract.Parse(Envelope("news", "NEWS", "NEWS", NewsValue), Sub);
+            Assert.That(update.News.Origin, Is.EqualTo(DataOrigin.News));
+            Assert.That(update.News.Value.Items[0].IsFiling, Is.True);
+            Assert.That(update.News.Value.Items[0].Mentions, Contains.Item("005930"));
+            Assert.That(update.News.Value.Items[0].FilingType, Is.EqualTo("A001"));
+        }
+
+        [Test]
+        public void RejectsNewsOriginOnMarketCapabilities()
+        {
+            Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(
+                Envelope("quote", "005930", "NEWS", "{\"last_price\":\"1\",\"change\":null,\"change_percent\":null,\"volume\":null}"), Sub));
+            Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(Envelope("news", "NEWS", "KIWOOM", NewsValue), Sub));
+        }
+
+        [Test]
+        public void RejectsAccountSubjectOnQuote()
+        {
+            Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(
+                Envelope("quote", "ACCOUNT", "KIWOOM", "{\"last_price\":\"1\",\"change\":null,\"change_percent\":null,\"volume\":null}"), Sub));
+            Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(Envelope("balance", "005930", "KIWOOM", BalanceValue("123*****90")), Sub));
+        }
+
         [Test]
         public void NullMarketIsAccepted()
         {

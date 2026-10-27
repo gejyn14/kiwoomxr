@@ -57,7 +57,57 @@ namespace SpatialTrading.Market
             return Wrap(root, book);
         }
 
-        private static JObject Read(string json, string code, Guid correlation)
+        public static Observation<BalanceSnapshot> Balance(string json, Guid correlation)
+        {
+            var root = Read(json, "ACCOUNT", correlation); var value = Required(root, "value");
+            BalanceSnapshot balance = null;
+            if (value.Type != JTokenType.Null)
+            {
+                var item = Object(value, "account", "total_evaluation", "total_profit", "total_profit_rate", "orderable_cash", "holdings");
+                var account = Text(item, "account");
+                if (!Regex.IsMatch(account, @"^[0-9]{3}\*+[0-9]{2}$")) throw Invalid(); // an unmasked account number is dropped
+                var holdings = new List<Holding>();
+                foreach (var token in Array(item, "holdings"))
+                {
+                    var h = Object(token, "code", "name", "quantity", "average_price", "current_price", "profit", "profit_rate");
+                    var code = Text(h, "code");
+                    if (!Regex.IsMatch(code, @"^[0-9]{6}$")) throw Invalid();
+                    holdings.Add(new Holding(code, Text(h, "name"), Quantity(h, "quantity") ?? throw Invalid(),
+                        Money(h, "average_price"), Money(h, "current_price"), Money(h, "profit"), Money(h, "profit_rate")));
+                }
+                balance = new BalanceSnapshot(account, Money(item, "total_evaluation"), Money(item, "total_profit"),
+                    Money(item, "total_profit_rate"), Money(item, "orderable_cash"), holdings);
+            }
+            return Wrap(root, balance, DataOrigin.Kiwoom);
+        }
+
+        public static Observation<NewsFeed> News(string json, Guid correlation)
+        {
+            var root = Read(json, "NEWS", correlation, "NEWS"); var value = Required(root, "value");
+            NewsFeed feed = null;
+            if (value.Type != JTokenType.Null)
+            {
+                var items = new List<NewsItem>();
+                foreach (var token in Array(Object(value, "items"), "items"))
+                {
+                    var n = Object(token, "kind", "source", "title", "published_at", "mentions", "filing_type");
+                    var kind = Text(n, "kind");
+                    if (kind != "NEWS" && kind != "FILING") throw Invalid();
+                    var mentions = new List<string>();
+                    foreach (var m in Array(n, "mentions"))
+                    {
+                        if (m.Type != JTokenType.String || !Regex.IsMatch(m.Value<string>(), @"^[0-9]{6}$")) throw Invalid();
+                        mentions.Add(m.Value<string>());
+                    }
+                    items.Add(new NewsItem(kind == "FILING", Text(n, "source"), Text(n, "title"),
+                        Time(n, "published_at") ?? throw Invalid(), mentions, Text(n, "filing_type", true)));
+                }
+                feed = new NewsFeed(items);
+            }
+            return Wrap(root, feed, DataOrigin.News);
+        }
+
+        private static JObject Read(string json, string code, Guid correlation, string origin = "KIWOOM")
         {
             if (string.IsNullOrWhiteSpace(json) || json.Length > 2 * 1024 * 1024 || correlation == Guid.Empty)
                 throw Invalid();
@@ -67,7 +117,7 @@ namespace SpatialTrading.Market
                 {
                     var root = Object(JToken.ReadFrom(reader, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error }),
                         "instrument_code", "state", "origin", "value", "received_at", "source_at", "reason", "correlation_id");
-                    if (reader.Read() || Text(root, "instrument_code") != code || Text(root, "origin") != "KIWOOM" ||
+                    if (reader.Read() || Text(root, "instrument_code") != code || Text(root, "origin") != origin ||
                         !Guid.TryParseExact(Text(root, "correlation_id"), "D", out var actual) || actual != correlation) throw Invalid();
                     return root;
                 }
@@ -75,12 +125,12 @@ namespace SpatialTrading.Market
             catch (JsonException) { throw Invalid(); }
         }
 
-        private static Observation<T> Wrap<T>(JObject root, T value) where T : class
+        private static Observation<T> Wrap<T>(JObject root, T value, DataOrigin origin = DataOrigin.Kiwoom) where T : class
         {
             var text = Text(root, "state");
             if (!Enum.TryParse(text, true, out DataState state) || !Enum.IsDefined(typeof(DataState), state) ||
                 state.ToString().ToUpperInvariant() != text) throw Invalid();
-            return new Observation<T>(value, state, DataOrigin.Kiwoom, Time(root, "received_at"),
+            return new Observation<T>(value, state, origin, Time(root, "received_at"),
                 Time(root, "source_at"), Text(root, "reason", true));
         }
 

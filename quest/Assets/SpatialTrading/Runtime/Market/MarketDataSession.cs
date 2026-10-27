@@ -23,12 +23,16 @@ namespace SpatialTrading.Market
         public event Action Changed;
         private readonly Dictionary<string, Observation<QuoteSnapshot>> _quotes = new Dictionary<string, Observation<QuoteSnapshot>>();
         private readonly Dictionary<string, Observation<CandleSeries>> _candles = new Dictionary<string, Observation<CandleSeries>>();
+        private readonly Dictionary<string, Observation<CandleSeries>> _daily = new Dictionary<string, Observation<CandleSeries>>();
+        private readonly Dictionary<string, Observation<CandleSeries>> _fourHour = new Dictionary<string, Observation<CandleSeries>>();
         private readonly Dictionary<string, Observation<OrderBookSnapshot>> _books = new Dictionary<string, Observation<OrderBookSnapshot>>();
         private readonly Dictionary<string, string> _markets = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> _intervalMarkets = new Dictionary<string, string>(); // key: code|interval
         private readonly List<string> _codes = new List<string>(); // streamed codes; empty when not streaming
+        private Observation<BalanceSnapshot> _balance;
+        private Observation<NewsFeed> _news;
         private GatewayStream _stream;
-        private string _selected;
-        private string _compared;
+        private bool _subscribed;
         private string _linkReason;   // non-null while the gateway socket is down
         private string _brokerReason; // non-null while the last heartbeat reported the broker disconnected
         private bool _heartbeatLost;
@@ -38,15 +42,23 @@ namespace SpatialTrading.Market
         public void Configure(bool preview)
         {
             if (preview != _preview) ClearCache(); // synthetic values never survive into gateway mode, nor live ones into preview
-            _preview = preview; _selected = null; _compared = null; StopStream();
+            _preview = preview; _subscribed = false; StopStream();
         }
 
         public Observation<QuoteSnapshot> Quote(string code) => View(_quotes, code);
+        /// <summary>Legacy one-minute candles, kept for the old shell.</summary>
         public Observation<CandleSeries> Candles(string code) => View(_candles, code);
+        public Observation<CandleSeries> Daily(string code) => View(_daily, code);
+        public Observation<CandleSeries> FourHour(string code) => View(_fourHour, code);
         public Observation<OrderBookSnapshot> Book(string code) => View(_books, code);
+        public Observation<BalanceSnapshot> Balance() => ViewSingle(_balance);
+        public Observation<NewsFeed> News() => ViewSingle(_news);
         /// <summary>Exchange of the latest streamed observation for a code: "KRX", "NXT" or null.</summary>
         public string MarketLabel(string code) =>
             !_preview && _codes.Contains(code) && _markets.TryGetValue(code, out var market) ? market : null;
+        /// <summary>Exchange of the latest streamed candles of an interval ("1D" or "4H") for a code.</summary>
+        public string MarketLabel(string code, string interval) =>
+            !_preview && _codes.Contains(code) && _intervalMarkets.TryGetValue(code + "|" + interval, out var market) ? market : null;
 
         private Observation<T> Empty<T>(DataState state, string reason = null) where T : class =>
             new Observation<T>(null, state, _preview ? DataOrigin.Synthetic : DataOrigin.Kiwoom, null, reason: reason);
@@ -58,42 +70,65 @@ namespace SpatialTrading.Market
             return StreamOverlay.Apply(raw, _linkReason, _brokerReason, _heartbeatLost);
         }
 
-        public void Select(ShellState state, Guid correlationId)
+        private Observation<T> ViewSingle<T>(Observation<T> raw) where T : class
         {
-            var comparison = state.ComparisonInstrument?.Code;
-            if (_selected == state.SelectedInstrument.Code && _compared == comparison) return;
-            _selected = state.SelectedInstrument.Code; _compared = comparison;
+            if (_preview || _codes.Count == 0) return raw ?? Empty<T>(DataState.Loading);
+            return StreamOverlay.Apply(raw, _linkReason, _brokerReason, _heartbeatLost);
+        }
+
+        /// <summary>Always-on subscription to every trader spread chart instrument, plus the account and news feeds.</summary>
+        public void SubscribeAll(Guid correlationId)
+        {
+            if (_subscribed) return;
+            _subscribed = true;
             if (_preview)
             {
                 StopStream(); ClearCache();
-                _quotes[_selected] = PreviewMarketData.Quote(state.SelectedInstrument);
-                _candles[_selected] = PreviewMarketData.Candles(state.SelectedInstrument);
-                _books[_selected] = PreviewMarketData.Book(state.SelectedInstrument);
-                if (state.ComparisonInstrument != null) _quotes[comparison] = PreviewMarketData.Quote(state.ComparisonInstrument);
+                foreach (var instrument in TraderCatalog.Charts)
+                {
+                    var code = instrument.Code;
+                    _quotes[code] = PreviewMarketData.Quote(instrument);
+                    var candles = PreviewMarketData.Candles(instrument);
+                    _candles[code] = candles;
+                    _daily[code] = Relabel(candles, "1D"); _fourHour[code] = Relabel(candles, "4H");
+                    if (instrument.Kind != InstrumentKind.Index) _books[code] = PreviewMarketData.Book(instrument);
+                }
+                // No synthetic account or news: those would be invented financial facts.
+                _balance = Empty<BalanceSnapshot>(DataState.Unavailable, PreviewNoAccount);
+                _news = Empty<NewsFeed>(DataState.Unavailable, PreviewNoNews);
                 Changed?.Invoke(); return;
             }
             if (!LoadSettings(out var url, out var token))
             {
                 StopStream(); ClearCache();
-                _quotes[_selected] = Empty<QuoteSnapshot>(DataState.Unavailable, ConfigurationRequired);
-                _candles[_selected] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
-                _books[_selected] = Empty<OrderBookSnapshot>(DataState.Unavailable, ConfigurationRequired);
-                if (comparison != null) _quotes[comparison] = Empty<QuoteSnapshot>(DataState.Unavailable, ConfigurationRequired);
+                foreach (var instrument in TraderCatalog.Charts)
+                {
+                    var code = instrument.Code;
+                    _quotes[code] = Empty<QuoteSnapshot>(DataState.Unavailable, ConfigurationRequired);
+                    _candles[code] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
+                    _daily[code] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
+                    _fourHour[code] = Empty<CandleSeries>(DataState.Unavailable, ConfigurationRequired);
+                    if (instrument.Kind != InstrumentKind.Index) _books[code] = Empty<OrderBookSnapshot>(DataState.Unavailable, ConfigurationRequired);
+                }
+                _balance = Empty<BalanceSnapshot>(DataState.Unavailable, ConfigurationRequired);
+                _news = Empty<NewsFeed>(DataState.Unavailable, ConfigurationRequired);
                 Changed?.Invoke(); return;
             }
-            var codes = new List<string> { _selected };
-            if (comparison != null && comparison != _selected) codes.Add(comparison);
-            // Stream mode serves the current cache; values of codes leaving the subscription are dropped.
-            Retain(_quotes, codes); Retain(_candles, codes); Retain(_books, codes); Retain(_markets, codes);
-            if (_codes.Count != codes.Count || !codes.TrueForAll(_codes.Contains))
-            {
-                _codes.Clear(); _codes.AddRange(codes);
-                if (_stream == null) BindStream();
-                _stream.Connect(url, token, codes);
-                _heartbeatAt = Time.unscaledTime; // the new subscription gets a fresh heartbeat window
-            }
+            var codes = new List<string>();
+            foreach (var instrument in TraderCatalog.Charts) codes.Add(instrument.Code);
+            _codes.Clear(); _codes.AddRange(codes);
+            if (_stream == null) BindStream();
+            _stream.Connect(url, token, codes);
+            _heartbeatAt = Time.unscaledTime; // the subscription gets a fresh heartbeat window
             Changed?.Invoke();
         }
+
+        public const string PreviewNoAccount = "PREVIEW_NO_ACCOUNT_DATA";
+        public const string PreviewNoNews = "PREVIEW_NO_NEWS_DATA";
+
+        private static Observation<CandleSeries> Relabel(Observation<CandleSeries> source, string interval) =>
+            new Observation<CandleSeries>(new CandleSeries(source.Value.InstrumentCode, interval, source.Value.Candles),
+                source.State, source.Origin, source.ReceivedAt, source.SourceAt, source.Reason);
 
         public static bool AllowedGateway(string address) => GatewayStreamContract.AllowedStreamAddress(address);
 
@@ -139,23 +174,30 @@ namespace SpatialTrading.Market
             _linkReason = null; _brokerReason = null; _heartbeatLost = false; _heartbeatAt = null;
         }
 
-        private void ClearCache() { _quotes.Clear(); _candles.Clear(); _books.Clear(); _markets.Clear(); }
-
-        private static void Retain<T>(Dictionary<string, T> cache, List<string> codes)
+        private void ClearCache()
         {
-            foreach (var key in new List<string>(cache.Keys))
-                if (!codes.Contains(key)) cache.Remove(key);
+            _quotes.Clear(); _candles.Clear(); _daily.Clear(); _fourHour.Clear(); _books.Clear();
+            _markets.Clear(); _intervalMarkets.Clear(); _balance = null; _news = null;
         }
 
         private void OnStreamUpdate(StreamUpdate update)
         {
-            if (_preview || !_codes.Contains(update.Code)) return;
-            _markets[update.Code] = update.Market;
+            if (_preview || _codes.Count == 0) return;
             switch (update.Capability)
             {
-                case StreamCapability.Quote: _quotes[update.Code] = update.Quote; break;
-                case StreamCapability.Candles: _candles[update.Code] = update.Candles; break;
-                case StreamCapability.OrderBook: _books[update.Code] = update.Book; break;
+                case StreamCapability.Balance: _balance = update.Balance; break;
+                case StreamCapability.News: _news = update.News; break;
+                default:
+                    if (!_codes.Contains(update.Code)) return;
+                    switch (update.Capability)
+                    {
+                        case StreamCapability.Quote: _quotes[update.Code] = update.Quote; _markets[update.Code] = update.Market; break;
+                        case StreamCapability.Candles: _candles[update.Code] = update.Candles; _markets[update.Code] = update.Market; break;
+                        case StreamCapability.OrderBook: _books[update.Code] = update.Book; _markets[update.Code] = update.Market; break;
+                        case StreamCapability.CandlesDaily: _daily[update.Code] = update.Candles; _intervalMarkets[update.Code + "|1D"] = update.Market; break;
+                        case StreamCapability.CandlesFourHour: _fourHour[update.Code] = update.Candles; _intervalMarkets[update.Code + "|4H"] = update.Market; break;
+                    }
+                    break;
             }
             _dirty = true; // coalesced to one render per frame in LateUpdate
         }

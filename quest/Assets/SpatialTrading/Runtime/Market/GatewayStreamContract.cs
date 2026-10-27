@@ -11,7 +11,7 @@ using SpatialTrading.Domain;
 
 namespace SpatialTrading.Market
 {
-    public enum StreamCapability { Quote, Candles, OrderBook }
+    public enum StreamCapability { Quote, Candles, OrderBook, CandlesDaily, CandlesFourHour, Balance, News }
 
     /// <summary>One live observation; only the member matching <see cref="Capability"/> is non-null.</summary>
     public sealed class StreamUpdate
@@ -22,9 +22,12 @@ namespace SpatialTrading.Market
         public Observation<QuoteSnapshot> Quote { get; }
         public Observation<CandleSeries> Candles { get; }
         public Observation<OrderBookSnapshot> Book { get; }
+        public Observation<BalanceSnapshot> Balance { get; }
+        public Observation<NewsFeed> News { get; }
         public StreamUpdate(StreamCapability capability, string code, string market,
-            Observation<QuoteSnapshot> quote, Observation<CandleSeries> candles, Observation<OrderBookSnapshot> book)
-        { Capability = capability; Code = code; Market = market; Quote = quote; Candles = candles; Book = book; }
+            Observation<QuoteSnapshot> quote, Observation<CandleSeries> candles, Observation<OrderBookSnapshot> book,
+            Observation<BalanceSnapshot> balance = null, Observation<NewsFeed> news = null)
+        { Capability = capability; Code = code; Market = market; Quote = quote; Candles = candles; Book = book; Balance = balance; News = news; }
     }
 
     public sealed class StreamHeartbeat
@@ -131,8 +134,15 @@ namespace SpatialTrading.Market
             if (!(GatewayContract.Required(root, "observation") is JObject inner)) throw GatewayContract.Invalid();
             var code = GatewayContract.Text(inner, "instrument_code");
             var text = inner.ToString(Formatting.None);
+            var subject = capability == "balance" ? "ACCOUNT" : capability == "news" ? "NEWS" : null;
+            if (subject != null ? code != subject : !Regex.IsMatch(code, @"^([0-9]{6}|[0-9]{3})$")) throw GatewayContract.Invalid();
+            if (capability == "orderbook" && code.Length != 6) throw GatewayContract.Invalid(); // an index has no order book
             switch (capability)
             {
+                case "candles_1d": return new StreamUpdate(StreamCapability.CandlesDaily, code, market, null, GatewayContract.Candles(text, code, subscription), null);
+                case "candles_4h": return new StreamUpdate(StreamCapability.CandlesFourHour, code, market, null, GatewayContract.Candles(text, code, subscription), null);
+                case "balance": return new StreamUpdate(StreamCapability.Balance, code, market, null, null, null, GatewayContract.Balance(text, subscription));
+                case "news": return new StreamUpdate(StreamCapability.News, code, market, null, null, null, null, GatewayContract.News(text, subscription));
                 case "quote": return new StreamUpdate(StreamCapability.Quote, code, market, GatewayContract.Quote(text, code, subscription), null, null);
                 case "candles": return new StreamUpdate(StreamCapability.Candles, code, market, null, GatewayContract.Candles(text, code, subscription), null);
                 case "orderbook": return new StreamUpdate(StreamCapability.OrderBook, code, market, null, null, GatewayContract.Book(text, code, subscription));

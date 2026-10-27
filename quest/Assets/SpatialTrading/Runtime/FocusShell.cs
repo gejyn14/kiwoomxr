@@ -76,7 +76,7 @@ namespace SpatialTrading
         { _currentCorrelation = Guid.NewGuid(); _market.Configure(preview); OnContextChanged(State); }
 
         private void OnContextChanged(ShellState state)
-        { _market.Select(state, _currentCorrelation); Render(state); }
+        { _market.SubscribeAll(_currentCorrelation); Render(state); }
         private void OnMarketChanged() => Render(State);
         private void OnDestroy()
         { if (_market != null) _market.Changed -= OnMarketChanged; }
