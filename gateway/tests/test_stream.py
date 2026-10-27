@@ -148,3 +148,55 @@ def test_module_import_does_not_require_credentials(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     import spatial_gateway.app as module
     assert callable(module.create_app)
+
+
+def test_broker_lifespan_seeds_marks_down_on_crash_and_cleans_up(monkeypatch):
+    import asyncio
+    import time
+    from spatial_gateway import app as app_module
+    from spatial_gateway.kiwoom.rest import MinuteBar
+
+    seeds, state = [], {"closed": False, "cancelled": False}
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def aclose(self): state["closed"] = True
+
+    class FakeTokens:
+        def __init__(self, *a, **k): pass
+
+    class FakeRest:
+        def __init__(self, *a, **k): pass
+        async def minute_candles(self, code, limit=240):
+            seeds.append(code)
+            p = Decimal("100")
+            return [MinuteBar(start=datetime(2026, 10, 27, 9, 59, tzinfo=KST), open=p, high=p, low=p, close=p, volume=5)]
+
+    class FakeRealtime:
+        def __init__(self, settings, tokens, on_event, on_state, **k): self.on_state = on_state
+        async def run(self):
+            self.on_state(True, None)
+            await asyncio.sleep(0.05)
+            raise RuntimeError("boom")
+
+    for name, fake in (("httpx", None), ("TokenProvider", FakeTokens), ("KiwoomRest", FakeRest),
+                       ("KiwoomRealtime", FakeRealtime)):
+        if fake:
+            monkeypatch.setattr(app_module, name, fake)
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeClient)
+
+    hub = MarketHub(lambda: NOW, watch_codes=("005930",))
+    app = create_app(SETTINGS, hub=hub, start_broker=True, timing=FAST)
+    with TestClient(app) as client:
+        deadline = time.time() + 3
+        while time.time() < deadline and hub.connection != (False, "KIWOOM_WS_CLOSED"):
+            time.sleep(0.02)
+        assert seeds == ["005930", "005930_NX"]
+        assert {("005930", Market.KRX), ("005930", Market.NXT)} <= set(hub._states)
+        assert hub.connection == (False, "KIWOOM_WS_CLOSED")
+        assert client.get("/health").json()["broker_connected"] is False
+        with client.websocket_connect("/v1/stream") as ws:
+            ws.send_text(sub())
+            beat = collect(ws, lambda m: any(x["type"] == "heartbeat" for x in m))[-1]
+            assert beat["broker_connected"] is False and beat["reason"] == "KIWOOM_WS_CLOSED"
+    assert state["closed"] is True

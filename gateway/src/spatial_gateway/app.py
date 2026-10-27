@@ -56,6 +56,14 @@ def create_app(settings: Settings | None = None, *, hub: MarketHub | None = None
     timing = timing or StreamTiming()
     provider = HubMarket(hub)
 
+    def _broker_done(done: asyncio.Task) -> None:
+        if done.cancelled():
+            return
+        error = done.exception()
+        if error is not None:  # never restarted; surface it so clients see the broker as down
+            log.error("broker task died: %s", type(error).__name__)
+            hub.set_connection(False, "KIWOOM_WS_CLOSED")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         task: asyncio.Task | None = None
@@ -71,6 +79,7 @@ def create_app(settings: Settings | None = None, *, hub: MarketHub | None = None
                 await realtime.run()
 
             task = asyncio.create_task(broker())
+            task.add_done_callback(_broker_done)
         try:
             yield
         finally:
