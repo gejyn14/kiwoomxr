@@ -1,0 +1,24 @@
+{
+  "_note": "hand-made from kt00018_empty",
+  "tot_pur_amt": "000000000071000",
+  "tot_evlt_amt": "000000000225000",
+  "tot_evlt_pl": "000000000154000",
+  "tot_prft_rt": "216.90",
+  "prsm_dpst_aset_amt": "000000000000000",
+  "tot_loan_amt": "000000000000000",
+  "tot_crd_loan_amt": "000000000000000",
+  "tot_crd_ls_amt": "000000000000000",
+  "acnt_evlt_remn_indv_tot": [
+    {
+      "stk_cd": "A005930",
+      "stk_nm": "삼성전자",
+      "rmnd_qty": "000000000000001",
+      "pur_pric": "000000071000",
+      "cur_prc": "+000000225000",
+      "evltv_prft": "000000154000",
+      "prft_rt": "216.90"
+    }
+  ],
+  "return_code": 0,
+  "return_msg": "조회가 완료되었습니다"
+}

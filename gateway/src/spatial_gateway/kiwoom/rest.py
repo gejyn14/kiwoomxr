@@ -5,7 +5,8 @@ from decimal import Decimal
 import httpx
 
 from spatial_gateway.kiwoom.auth import TokenProvider
-from spatial_gateway.kiwoom.values import kst_datetime, price, quantity
+from spatial_gateway.kiwoom.values import kst_datetime, price, quantity, signed
+from spatial_gateway.models import Holding
 from spatial_gateway.settings import Settings
 
 _INVALID_TOKEN = 8005
@@ -32,6 +33,21 @@ class Bar:
 
 
 MinuteBar = Bar
+
+
+@dataclass(frozen=True)
+class RawBalance:
+    total_evaluation: Decimal | None
+    total_profit: Decimal | None
+    total_profit_rate: Decimal | None
+    holdings: tuple[Holding, ...]
+
+
+def mask_account(number: str) -> str:
+    """First three digits, `*` for the middle, last two digits. Works for any length of 5 or more."""
+    if len(number) < 5:
+        raise ValueError("account number too short to mask")
+    return number[:3] + "*" * (len(number) - 5) + number[-2:]
 
 
 class KiwoomRest:
@@ -125,6 +141,57 @@ class KiwoomRest:
             {"inds_cd": index_code, "tic_scope": "60"},
             "inds_min_pole_qry", "cntr_tm", False, _INDEX_SCALE, limit,
         )
+
+    async def account_number(self) -> str:
+        """ka00001 `acctNo`. Callers keep it in memory only; never log or persist it."""
+        data = await self.request("ka00001", "/api/dostk/acnt", {})
+        number = data.get("acctNo")
+        if not isinstance(number, str) or not number.strip():
+            raise KiwoomApiError(-1, "ka00001 response has no acctNo")
+        return number.strip()
+
+    async def balance(self) -> RawBalance:
+        """kt00018. Live fixture (empty account) confirmed tot_evlt_amt, tot_evlt_pl, tot_prft_rt and the
+        list acnt_evlt_remn_indv_tot; row fields follow the brief (stk_cd with `A` prefix, stk_nm, rmnd_qty,
+        pur_pric, cur_prc, evltv_prft, prft_rt) since the live account has no rows."""
+        data = await self.request("kt00018", "/api/dostk/acnt", {"qry_tp": "1", "dmst_stex_tp": "KRX"})
+        rows = data.get("acnt_evlt_remn_indv_tot")
+        holdings: list[Holding] = []
+        for row in rows if isinstance(rows, list) else []:
+            holding = _parse_holding(row) if isinstance(row, dict) else None
+            if holding is not None:
+                holdings.append(holding)
+        return RawBalance(
+            total_evaluation=signed(_text(data, "tot_evlt_amt")),
+            total_profit=signed(_text(data, "tot_evlt_pl")),
+            total_profit_rate=signed(_text(data, "tot_prft_rt")),
+            holdings=tuple(holdings),
+        )
+
+    async def orderable_cash(self, code: str, price: Decimal) -> Decimal | None:
+        """kt00010 `ord_alowa` (live fixture: zero-padded integer string). Read-only simulation query."""
+        data = await self.request(
+            "kt00010", "/api/dostk/acnt", {"stk_cd": code, "trde_tp": "2", "uv": str(price)}
+        )
+        return signed(_text(data, "ord_alowa"))
+
+
+def _parse_holding(row: dict) -> Holding | None:
+    code = (_text(row, "stk_cd") or "").strip()
+    if code.startswith("A"):
+        code = code[1:]
+    qty = quantity(_text(row, "rmnd_qty"))
+    if len(code) != 6 or not code.isdigit() or qty is None:
+        return None
+    return Holding(
+        code=code,
+        name=(_text(row, "stk_nm") or "").strip(),
+        quantity=qty,
+        average_price=price(_text(row, "pur_pric")),
+        current_price=price(_text(row, "cur_prc")),
+        profit=signed(_text(row, "evltv_prft")),
+        profit_rate=signed(_text(row, "prft_rt")),
+    )
 
 
 def _text(row: dict, key: str) -> str | None:

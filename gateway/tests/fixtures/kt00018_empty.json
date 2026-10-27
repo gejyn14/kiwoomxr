@@ -1,0 +1,13 @@
+{
+  "tot_pur_amt": "000000000000000",
+  "tot_evlt_amt": "000000000000000",
+  "tot_evlt_pl": "000000000000000",
+  "tot_prft_rt": "0.00",
+  "prsm_dpst_aset_amt": "000000000000000",
+  "tot_loan_amt": "000000000000000",
+  "tot_crd_loan_amt": "000000000000000",
+  "tot_crd_ls_amt": "000000000000000",
+  "acnt_evlt_remn_indv_tot": [],
+  "return_code": 0,
+  "return_msg": "조회가 완료되었습니다"
+}
