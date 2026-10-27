@@ -50,3 +50,6 @@ gateway/.venv/
 *.pyc
 gateway/.state/
 quest/mono_crash.*
+
+# Superpowers brainstorm and SDD scratch.
+.superpowers/
