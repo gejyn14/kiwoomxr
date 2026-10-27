@@ -2,7 +2,7 @@
 
 A staged mixed-reality trading prototype. Interfaces produce typed actions; components consume application context and financial capabilities. Brokerage and Gemini secrets belong on the gateway.
 
-**Current state:** Milestone 0 is documented and the original M1 shell is verified in Unity, an inspected Android build and Meta XR Simulator. On 2026-10-27 the user decided to use the Kiwoom production domain and to allow kiwoom-cli documentation and implementation as the basis, so the repository-spec-only gate is retired (see the [design](docs/superpowers/specs/2026-10-27-investment-jarvis-design.md) and the [live market pipeline plan](docs/superpowers/plans/2026-10-27-live-market-pipeline.md)). The gateway now implements token issuance (au10001), daily and 4-hour candles for stocks and the KOSPI index, realtime trade/book (0B/0D) for KRX and NXT, realtime index (0J) data, a read-only masked account balance, a news feed, and a `/v1/stream` WebSocket to the Unity client (see [architecture](docs/ARCHITECTURE.md)). **None of this has been verified against the live Kiwoom API:** au10001 currently returns 8001 (app key/secret validation failed), so verification is offline only (gateway pytest, .NET domain tests, a spec-example fixture). Unity EditMode, editor and Quest 3 checks are pending. No orders are submitted; `/v1/orders` still returns 404.
+**Current state:** Milestone 0 is documented and the original M1 shell is verified in Unity, an inspected Android build and Meta XR Simulator. On 2026-10-27 the user decided to use the Kiwoom production domain and to allow kiwoom-cli documentation and implementation as the basis, so the repository-spec-only gate is retired (see the [design](docs/superpowers/specs/2026-10-27-investment-jarvis-design.md) and the [live market pipeline plan](docs/superpowers/plans/2026-10-27-live-market-pipeline.md)). The gateway now implements token issuance (au10001), daily and 4-hour candles for stocks and the KOSPI index, realtime trade/book (0B/0D) for KRX and NXT, realtime index (0J) data, a read-only masked account balance, a news feed, and a `/v1/stream` WebSocket to the Unity client (see [architecture](docs/ARCHITECTURE.md)). The live gateway was verified against the Kiwoom production API on 2026-10-28 while the market was closed (`artifacts/trader-spread/gateway-live.txt`): token issuance succeeded, every heartbeat reported the broker connected, and the daily/4-hour candles and the balance arrived with values labelled DELAYED · MARKET_CLOSED, with no secret in the gateway log. Realtime ticks (0B/0D/0J) and LIVE labels during market hours have not been captured yet, and the Quest 3 headset checks are pending. No orders are submitted; `/v1/orders` still returns 404.
 
 - [Roadmap and current gates](docs/ROADMAP.md)
 - [Milestone 2 scope and verification](docs/MILESTONE_2.md)
@@ -25,9 +25,9 @@ A staged mixed-reality trading prototype. Interfaces produce typed actions; comp
 
 The Unity scene is `TraderSpread` (the only build scene; the old FocusShell picker is retired). It lays out eight flat, front-facing panels: three stock charts, a KOSPI chart, an order book, news, balance and an order panel. Panels can be grabbed, moved on a grid, resized from a corner handle and flicked away; see the [interaction model](docs/INTERACTION_MODEL.md). The order panel only prepares and previews a ticket: nothing is sent and `/v1/orders` still returns 404. Generate the scene with the Unity menu **Spatial Trading → 2. Generate Trader Spread scene** (or `scripts/unity.sh scene`).
 
-![Trader spread in Meta XR Simulator, live gateway data](docs/images/trader-spread-live.png)
+![Trader spread in the Unity editor (Play mode), live gateway data](docs/images/trader-spread-live.png)
 
-The image was captured in the Meta XR Simulator from the live gateway stream while the market was closed, so panels show 장 마감 and empty book levels. The account number shown is the gateway-masked form. It is not a Quest 3 capture.
+The image is an automated Unity editor Play-mode capture (no XR runtime, camera rendered to PNG) from the live gateway stream while the market was closed, so panels show 장 마감 and empty book levels. The account line is redacted in the image. It is neither a Meta XR Simulator nor a Quest 3 capture.
 
 ## Run the gateway
 
@@ -52,7 +52,7 @@ Environment keys read by `Settings.from_env` (`gateway/src/spatial_gateway/setti
 
 ## Known limits
 
-- 주문가능 (orderable cash) shows "—" or 0 because the demo account has no orderable cash. A real S4 buy needs funds deposited first; until then the order panel cannot show an affordable size.
+- 주문가능 (orderable cash) is not a reliable "can buy" signal in the demo. It shows "—" whenever the amount is unknown: when there is no last price to price the query (after the close quotes are UNAVAILABLE, so this is the usual after-hours reading) and when the query fails. During market hours the demo account, which has no cash, reads "0원" (the live query returns a zero amount). "—" therefore does not mean the account is empty, and neither "—" nor "0원" says a buy is affordable. A real S4 buy needs funds deposited first; until then the order panel cannot show an affordable size.
 - Outside KRX/NXT sessions the panels keep the last values labeled 장 마감, so book depth and prices can be empty.
 - Account, balance and news are read-only. Voice/Gemini integration and order execution are not enabled.
 

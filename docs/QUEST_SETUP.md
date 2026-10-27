@@ -129,15 +129,15 @@ The file must contain exactly `url` and `token`; anything else is rejected. Use 
 - Heartbeat `broker_connected=false`: values are shown as DISCONNECTED with the heartbeat's reason.
 - Gateway socket closed or unreachable: everything streamed is shown as DISCONNECTED (`GATEWAY_UNREACHABLE`; a rejected pairing token is `GATEWAY_UNAUTHORIZED`). The last values stay visible. Reconnects back off 1, 2, 4, then 8 s; the backoff restarts at 1 s as soon as a session has received its first message, however that session later ends; sessions that never deliver (connect failure, refused or unauthorized) keep backing off. The first heartbeat on the new connection clears the status.
 - A single message over 2 MiB closes the connection (`GATEWAY_MESSAGE_TOO_LARGE`). Malformed messages are dropped one at a time with a warning that omits their contents.
-- The chart's source label shows the venue of the latest observation, for example `KIWOOM · NXT  /  LIVE`; the order-book caption shows the same venue.
+- Each chart header shows its state, venue and interval, for example `LIVE · NXT · 4H`; the order-book caption shows the venue of the latest quote/book. The 1D series is always KRX: in NXT hours a 1D header shows the last KRX close as `장 마감 · KRX · 1D`, never the NXT quote. Preview (synthetic) data reads `SYNTHETIC · 합성 예시` on every panel and 매수 준비 stays disabled.
 - Outside KRX/NXT sessions (before 08:00, 08:50-09:00, after 20:00 KST, weekends) the gateway serves the last session's values as SNAPSHOT (`DELAYED`) with reason `MARKET_CLOSED` and that session's venue label; panels show **장 마감** and no connection advice. Connection advice (연결 상태를 확인해 주세요) appears only for `GATEWAY_*`, `KIWOOM_*` and `BROKER_DISCONNECTED` reasons.
 - While the app is paused the stream socket is closed; it reconnects on resume and the gateway re-sends full state.
 
 ### Deferred manual checks
 
-These steps need a working Unity license and a valid Kiwoom key (Editor check) or the headset (device check). They have not been run yet.
+These steps need a working Unity license and a valid Kiwoom key (Editor check) or the headset (device check). An automated editor Play-mode capture against the live gateway was taken on 2026-10-28 with the market closed (see the README); the market-hours LIVE part of step 1 and step 2 have not been run yet.
 
-1. **Editor live check.** Start the gateway with a valid key. Open `TraderSpread.unity`, set the stream address with menu 9, choose menu 7 and enter Play Mode (or use the Meta XR Simulator, menu 5). On 삼성전자, confirm LIVE, the `KRX`/`NXT` label and a moving order book. Save a simulator capture as `docs/images/live-market-<date>.png`. Stop the gateway: DISCONNECTED must appear within 8 s and the last values must stay visible. Restart it: the shell must recover without input.
+1. **Editor live check.** Start the gateway with a valid key. Open `TraderSpread.unity`, set the stream address with menu 9, choose menu 7 and enter Play Mode (or use the Meta XR Simulator, menu 5). With the 삼성전자 chart selected (the default; key 2 in the editor), confirm LIVE, the `KRX`/`NXT` label and a moving order book. Save a capture as `docs/images/live-market-<date>.png`. Stop the gateway: DISCONNECTED must appear within 8 s and the last values must stay visible. Restart it: the trader spread must recover without input.
 2. **Device check.** Put the Quest and the Mac on the same hotspot/LAN. Add the Mac's IP to `GATEWAY_ALLOWED_HOSTS`, sideload the APK, push `gateway.json` as above and confirm LIVE on Quest. Record the result and relevant `adb logcat -s Unity` lines in `docs/MILESTONE_2.md`, with the token and device IDs removed.
 
 ### 발표 체크리스트 (demo day)

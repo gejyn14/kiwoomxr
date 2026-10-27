@@ -132,7 +132,7 @@ The gateway parses only the fields below for the trader-spread panels (`gateway/
 | `ka20006` daily index candles | `/api/dostk/chart` | `inds_cd`, `base_dt` | list `inds_dt_pole_qry`: `dt`, `open_pric`, `high_pric`, `low_pric`, `cur_prc`, `trde_qty`; levels use the index scale below |
 | `ka20005` minute index candles | `/api/dostk/chart` | `inds_cd`, `tic_scope`=60 | list `inds_min_pole_qry`: `cntr_tm`, `open_pric`, `high_pric`, `low_pric`, `cur_prc`, `trde_qty`; index scale applies |
 | `ka00001` account number | `/api/dostk/acnt` | none | `acctNo`, held in memory and exposed only masked |
-| `kt00018` balance | `/api/dostk/acnt` | `qry_tp`=1, `dmst_stex_tp`=KRX | `tot_evlt_amt`, `tot_evlt_pl`, `tot_prft_rt`; list `acnt_evlt_remn_indv_tot`: `stk_cd` (leading `A` stripped), `stk_nm`, `rmnd_qty`, `pur_pric`, `cur_prc`, `evltv_prft`, `prft_rt` |
+| `kt00018` balance | `/api/dostk/acnt` | `qry_tp`=1, `dmst_stex_tp`=KRX | `tot_evlt_amt`, `tot_evlt_pl`, `tot_prft_rt`; list `acnt_evlt_remn_indv_tot`: `stk_cd` (leading `A` stripped), `stk_nm` (blank falls back to the code), `rmnd_qty`, `pur_pric`, `cur_prc`, `evltv_prft`, `prft_rt`. **Holding-row fields not yet verified live:** the live account had no holdings, so these row fields follow the documentation only |
 | `kt00010` orderable amount | `/api/dostk/acnt` | `stk_cd`=005930, `trde_tp`=2 (buy), `uv` (last price) | `ord_alowa` (zero-padded integer string); a failed or priceless query gives null, never 0 |
 
 The 4H series is not a Kiwoom interval: 60-minute bars from `ka10080`/`ka20005` are aggregated into 4-hour buckets by the gateway. A bar is dropped if any OHLC value or volume is missing or if open/close lie outside low-high.
@@ -141,7 +141,7 @@ Realtime (WebSocket `REG`):
 
 | Type | Registered item | Fields read |
 | --- | --- | --- |
-| `0J` index | each `GATEWAY_INDEX_CODES` code | `20` time HHmmss, `10` level, `11` change, `12` change percent; level and change use the index scale below |
+| `0J` index | each `GATEWAY_INDEX_CODES` code | `20` time HHmmss, `10` level, `11` change, `12` change percent; level and change use the index scale below. **Not yet verified live:** no `0J` message has been captured (the live check ran with the market closed); these fields follow the documentation only |
 | `04` balance | empty item (token account) | `908` time only. The `9201` account field and every other payload field are never parsed: the event only tells the AccountService to re-query `kt00018` |
 
 **Index scale.** Kiwoom returns index levels and changes as 100x integers: `"563834"` is 5638.34, `"+563834"` the same with a direction sign. `values.index_value` divides by 100 only when the string has no decimal point; a string with a decimal point is taken as already scaled. REST and realtime share this function so they agree. The percent change (`12`) is not rescaled.

@@ -54,7 +54,9 @@ The mouse backup cannot press canvas buttons (4H/1D, the order type buttons, 매
 - During market hours: LIVE labels and book depth.
 - Editor without the simulator: canvas buttons need the simulator's controller ray or a headset (the mouse fallback cannot press them).
 
-## Focus Mode
+## Focus Mode (historical, retired)
+
+> Historical: the Focus picker shell was retired on 2026-10-28 and replaced by the trader spread above. This section records the Milestone 0 design only; nothing in the current scene implements it.
 
 Show one selected instrument, its quote, data age and the main chart. Start without book, position or compare. A reachable action strip opens secondary components on demand. Component additions are paced and spatially consistent; opening Position prompts account selection if none exists, without inventing balance data. Selection changes update `FollowSelectedInstrument` bindings; each component transitions through its own loading/live states.
 
