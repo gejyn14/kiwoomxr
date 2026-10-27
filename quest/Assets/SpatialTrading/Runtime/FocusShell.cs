@@ -86,7 +86,8 @@ namespace SpatialTrading
             foreach (var button in FindObjectsByType<ShellButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
                 button.RefreshSelection(state);
             // Renderer failures do not prevent other independently bound components from updating.
-            try { _chart.RenderData(state.SelectedInstrument, _market.Quote(state.SelectedInstrument.Code), _market.Candles(state.SelectedInstrument.Code)); } catch (Exception error) { Debug.LogException(error, _chart); }
+            try { _chart.RenderData(state.SelectedInstrument, _market.Quote(state.SelectedInstrument.Code), _market.Candles(state.SelectedInstrument.Code),
+                _market.MarketLabel(state.SelectedInstrument.Code)); } catch (Exception error) { Debug.LogException(error, _chart); }
             try { _secondary.RenderData(state, _market.Book(state.SelectedInstrument.Code), _market.Quote(state.SelectedInstrument.Code),
                 state.ComparisonInstrument == null ? null : _market.Quote(state.ComparisonInstrument.Code)); } catch (Exception error) { Debug.LogException(error, _secondary); }
         }
