@@ -125,6 +125,58 @@ namespace SpatialTrading.Tests
             Assert.That((string)obj["correlation_id"], Is.EqualTo(Sub.ToString()));
         }
 
+        [TestCase("ws://192.168.0.12:8471/v1/stream", true)]
+        [TestCase("ws://10.0.0.5:8471/v1/stream", true)]
+        [TestCase("ws://172.20.1.1:8471/v1/stream", true)]
+        [TestCase("ws://8.8.8.8:8471/v1/stream", false)]
+        [TestCase("ws://gateway.example.com/v1/stream", false)]
+        [TestCase("wss://gateway.example.com/v1/stream", true)]
+        [TestCase("ws://127.0.0.1:8471/v1/stream?x=1", false)]
+        [TestCase("ws://127.0.0.1:8471/v1/stream", true)]
+        [TestCase("ws://localhost:8471/v1/stream", true)]
+        [TestCase("ws://[::1]:8471/v1/stream", true)]
+        [TestCase("ws://172.15.0.1:8471/v1/stream", false)]
+        [TestCase("ws://172.32.0.1:8471/v1/stream", false)]
+        [TestCase("ws://192.169.0.1:8471/v1/stream", false)]
+        [TestCase("ws://user:pass@192.168.0.12:8471/v1/stream", false)]
+        [TestCase("wss://user@gateway.example.com/v1/stream", false)]
+        [TestCase("wss://gateway.example.com/v1/stream#frag", false)]
+        [TestCase("wss://gateway.example.com/v1/stream?", false)]
+        [TestCase("http://127.0.0.1:8471", false)]
+        [TestCase("https://gateway.example.com/v1/stream", false)]
+        [TestCase("ftp://192.168.0.12/v1/stream", false)]
+        [TestCase("/v1/stream", false)]
+        [TestCase("", false)]
+        [TestCase(null, false)]
+        public void GatewayAddressPolicy(string address, bool allowed)
+        {
+            Assert.That(GatewayStreamContract.AllowedStreamAddress(address), Is.EqualTo(allowed));
+        }
+
+        [Test]
+        public void DeviceSettingsRequireAllowedAddressAndToken()
+        {
+            const string token = "0123456789abcdef0123456789abcdef";
+            Assert.That(GatewayStreamContract.TryReadSettings(
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + token + "\"}", out var url, out var secret), Is.True);
+            Assert.That(url, Is.EqualTo(new Uri("ws://192.168.0.12:8471/v1/stream")));
+            Assert.That(secret, Is.EqualTo(token));
+            foreach (var json in new[]
+            {
+                "{\"url\":\"ws://8.8.8.8:8471/v1/stream\",\"token\":\"" + token + "\"}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"\"}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":5}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\"}",
+                "{\"url\":\"ws://192.168.0.12:8471/v1/stream\",\"token\":\"" + token + "\",\"extra\":1}",
+                "[]", "not json", "", null
+            })
+            {
+                Assert.That(GatewayStreamContract.TryReadSettings(json, out url, out secret), Is.False);
+                Assert.That(url, Is.Null);
+                Assert.That(secret, Is.Null);
+            }
+        }
+
         [Test]
         public void SubscribeEscapesTokenAndKeepsCodes()
         {

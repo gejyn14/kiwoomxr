@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -70,6 +72,49 @@ namespace SpatialTrading.Market
                 ["type"] = "subscribe", ["token"] = token, ["codes"] = new JArray(codes),
                 ["correlation_id"] = subscription.ToString("D")
             }.ToString(Formatting.None);
+        }
+
+        /// <summary>
+        /// Same rule in the Editor and on device: <c>wss</c> anywhere; plain <c>ws</c> only to loopback or a
+        /// private IPv4 LAN (10/8, 172.16/12, 192.168/16). No user info, query or fragment.
+        /// </summary>
+        public static bool AllowedStreamAddress(string address)
+        {
+            if (string.IsNullOrEmpty(address) || address.IndexOfAny(new[] { '?', '#', '@' }) >= 0 ||
+                !Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Host.Length == 0 ||
+                uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0) return false;
+            if (uri.Scheme == "wss") return true;
+            if (uri.Scheme != "ws") return false;
+            if (string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)) return true;
+            if (!IPAddress.TryParse(uri.Host.TrimStart('[').TrimEnd(']'), out var ip)) return false;
+            if (IPAddress.IsLoopback(ip)) return true;
+            if (ip.AddressFamily != AddressFamily.InterNetwork) return false;
+            var b = ip.GetAddressBytes();
+            return b[0] == 10 || b[0] == 172 && b[1] >= 16 && b[1] <= 31 || b[0] == 192 && b[1] == 168;
+        }
+
+        /// <summary>Device-side <c>gateway.json</c>: exactly <c>{"url": "...", "token": "..."}</c>; never logged.</summary>
+        public static bool TryReadSettings(string json, out Uri url, out string token)
+        {
+            url = null; token = null;
+            if (string.IsNullOrWhiteSpace(json) || json.Length > 64 * 1024) return false;
+            try
+            {
+                JToken parsed;
+                using (var reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None, MaxDepth = 4 })
+                {
+                    parsed = JToken.ReadFrom(reader, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
+                    if (reader.Read()) return false;
+                }
+                var root = GatewayContract.Object(parsed, "url", "token");
+                var address = GatewayContract.Text(root, "url");
+                var secret = GatewayContract.Text(root, "token");
+                if (!AllowedStreamAddress(address) || secret.Length == 0) return false;
+                url = new Uri(address); token = secret;
+                return true;
+            }
+            catch (Exception error) when (error is JsonException || error is FormatException || error is ArgumentException)
+            { return false; }
         }
 
         private static string Type(JObject root) =>
