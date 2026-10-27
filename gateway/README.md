@@ -9,7 +9,7 @@ uv run --project gateway --env-file gateway/.env uvicorn spatial_gateway.app:app
   --app-dir gateway/src --host 0.0.0.0 --port 8471 --no-access-log
 ```
 
-Required environment: `KIWOOM_APPKEY`, `KIWOOM_SECRETKEY`, `GATEWAY_PAIRING_TOKEN` (32+ chars), `GATEWAY_WATCH_CODES`, `GATEWAY_ALLOWED_HOSTS`. For a LAN demo add the Mac's LAN IP to `GATEWAY_ALLOWED_HOSTS`. `uv.lock` pins the resolved dependencies. Plain HTTP/WS on a LAN is a demo setup only; a deployed gateway needs HTTPS/WSS and account authorization before account data or orders are introduced.
+Required environment: `KIWOOM_APPKEY`, `KIWOOM_SECRETKEY`, `GATEWAY_PAIRING_TOKEN` (32+ chars), `GATEWAY_WATCH_CODES`, `GATEWAY_ALLOWED_HOSTS`. For a LAN demo add the Mac's LAN IP to `GATEWAY_ALLOWED_HOSTS`; a request with any other `Host` is rejected (400) and only that `Host` value is logged as a warning. `uv.lock` pins the resolved dependencies. Plain HTTP/WS on a LAN is a demo setup only; a deployed gateway needs HTTPS/WSS and account authorization before account data or orders are introduced.
 
 Routes:
 
@@ -19,9 +19,9 @@ Routes:
 
 The optional `X-Correlation-ID` is an application UUID, not a Kiwoom request header. Financial decimals serialize as non-exponent decimal strings, up to 28 digits and eight fractional places. Quantities serialize as integer strings bounded to signed 64-bit range. Missing values remain JSON null. Those are application wire constraints, not exchange tick/quantity rules.
 
-Origin `KIWOOM` identifies the capability provider. Without a live broker connection, observations are `DISCONNECTED`/`LOADING`/`UNAVAILABLE` with explicit reasons; there is no synthetic fallback in this gateway.
+Origin `KIWOOM` identifies the capability provider. Without a live broker connection, observations are `DISCONNECTED`/`LOADING`/`UNAVAILABLE` with explicit reasons; there is no synthetic fallback in this gateway. Outside KRX/NXT sessions the gateway keeps serving the most recently received market's values as `DELAYED` with reason `MARKET_CLOSED` (and that market in the stream's `market` field); a code with no values yet is `UNAVAILABLE`/`MARKET_CLOSED`.
 
-Unity's **Spatial Trading → 7. Connect to local gateway** selects this provider. **8. Preview with synthetic data** is a separate explicit design mode. These modes can switch during Play. Android builds refuse the cleartext loopback development URL; a secure gateway configuration is required on a headset.
+Unity's **Spatial Trading → 7. Connect to local gateway** selects this provider. **8. Preview with synthetic data** is a separate explicit design mode. These modes can switch during Play. The Editor and the headset share one address policy ([QUEST_SETUP.md](../docs/QUEST_SETUP.md#live-market-stream-gateway)): `wss://` for any host, plain `ws://` only for loopback or a private LAN address. Plain `ws://` on a LAN is for the demo only.
 
 The client validates the response instrument and correlation UUID against the request. Envelopes require explicit null fields, exact uppercase status names and the intended `KIWOOM` provider. Duplicate keys, extra/missing fields, numeric JSON in string-valued financial fields, ambiguous timestamps and synthetic data received through this route are rejected. Candle adjustment and completion metadata are preserved. A renderer may retain stale values only with their explicit stale/disconnected status.
 

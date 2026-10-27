@@ -8,11 +8,12 @@ On 2026-10-27 the user decided to use the Kiwoom production domain and to accept
 
 - Gateway: Settings and TokenProvider (au10001, expiry in KST), `KiwoomRest` 1-minute candles (ka10080), `KiwoomRealtime` WebSocket (LOGIN, REG, 0B trade, 0D book; KRX `005930` and NXT `005930_NX`), market session rules (KRX 09:00-15:30; NXT 08:00-08:50 and 15:30-20:00 KST), `MarketHub`, and a `/v1/stream` WebSocket with pairing token and heartbeat. No order endpoint; `/v1/orders` still returns 404.
 - Unity: `GatewayStreamContract`, `GatewayStream`, heartbeat-based aging in `MarketDataSession`; `HubMarket` replaced `SpecificationGatedMarket`. HTTP polling and the 30-second cache-age display policy described below are superseded. Client rules are in [QUEST_SETUP.md](QUEST_SETUP.md): heartbeat every 5 s; no heartbeat for 15 s turns LIVE/SNAPSHOT values STALE (`GATEWAY_HEARTBEAT_LOST`); socket loss shows DISCONNECTED; reconnect backoff 1/2/4/8 s.
+- Final-review fixes (2026-10-27): outside KRX/NXT sessions the hub keeps serving the most recently received market's values as `DELAYED` with reason `MARKET_CLOSED` (UI: 장 마감; connection advice only for link/broker reasons). The Kiwoom realtime loop survives unexpected errors, uses a 15 s idle timeout in session (60 s outside) and resets its backoff only after 30 s registered. The demo-day checklist (발표 체크리스트) is in [QUEST_SETUP.md](QUEST_SETUP.md#발표-체크리스트-demo-day).
 
 | Evidence | Result | Limit |
 |---|---|---|
-| Gateway pytest | 108 passed | Offline; mocked transports |
-| .NET domain tests | 93 passed | Does not exercise Unity |
+| Gateway pytest | 126 passed | Offline; mocked transports |
+| .NET domain tests | 119 passed | Does not exercise Unity (includes the pure stream overlay, inbox bound and status wording) |
 | `gateway/tests/fixtures/ka10080_005930.json` | Used by `test_rest.py` | From the API documentation example, not a recorded live response |
 | Live Kiwoom (au10001, ka10080, 0B/0D) | NOT VERIFIED | Live verification pending: valid app key required; au10001 currently returns 8001 (app key/secret validation failed) |
 | Unity EditMode, editor visual, on-device | NOT RUN | Unity license pending; headset arrives 2026-10-29 |

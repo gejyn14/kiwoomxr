@@ -15,7 +15,7 @@ This document defines the implementation boundaries and milestone gates for a se
 | [KIWOOM_API_MAPPING.md](KIWOOM_API_MAPPING.md) | Repository-only brokerage evidence, exact fields and integration blockers |
 | [FAILURE_MODEL.md](FAILURE_MODEL.md) | Failure behavior, recovery, observability and test matrix |
 
-These are proposed application contracts, not claims about Kiwoom wire semantics. Only the API mapping may define Kiwoom URLs, API IDs, fields or state interpretations. `BLOCKED_BY_MISSING_SPEC` means stop the affected integration until an authoritative specification is added to this repository. It does not prevent unrelated shell or architecture work.
+These are proposed application contracts, not claims about Kiwoom wire semantics. Only the API mapping may define Kiwoom URLs, API IDs, fields or state interpretations. `BLOCKED_BY_MISSING_SPEC` meant stopping the affected integration until an authoritative specification was added to this repository; it never prevented unrelated shell or architecture work. The gate was retired for market data on 2026-10-27 (kiwoom-cli documentation and implementation are accepted as evidence, see [MILESTONE_2.md](MILESTONE_2.md)); it still applies to order paths per [ORDER_SAFETY.md](ORDER_SAFETY.md).
 
 ## Architecture and dependency direction
 
