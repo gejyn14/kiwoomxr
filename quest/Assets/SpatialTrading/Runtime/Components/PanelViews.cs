@@ -39,6 +39,12 @@ namespace SpatialTrading.Components
             return state.ToString().ToUpperInvariant();
         }
 
+        /// <summary>Badge of an observation: synthetic data always reads "SYNTHETIC · 합성 예시", never its state.</summary>
+        public static string Badge<T>(Observation<T> o) where T : class =>
+            IsSynthetic(o) ? StatusText.Synthetic : Badge(o?.State ?? DataState.Unavailable, o?.Reason);
+
+        public static bool IsSynthetic<T>(Observation<T> o) where T : class => o?.Origin == DataOrigin.Synthetic;
+
         public static string Join(params string[] parts) => string.Join(" · ", parts.Where(p => !string.IsNullOrEmpty(p)));
     }
 
@@ -83,11 +89,12 @@ namespace SpatialTrading.Components
 
             var last = ViewFormat.Number(quote?.Value?.LastPrice);
             var snap = book?.Value;
-            var state = book?.State ?? DataState.Unavailable;
             var reason = book?.Reason;
-            var status = ViewFormat.Join(ViewFormat.Badge(state, reason), market, "상위 " + depth + "호가");
-            var qState = quote?.Value != null ? quote.State : DataState.Live;
-            if (qState != DataState.Live) status += " · 시세 " + ViewFormat.Badge(qState, quote.Reason);
+            var status = ViewFormat.Join(ViewFormat.Badge(book), market, "상위 " + depth + "호가");
+            // A quote that is not plainly live gets its own label, unless it says the same "synthetic" as the book.
+            var quoteSynthetic = ViewFormat.IsSynthetic(quote);
+            if (quote?.Value != null && (quote.State != DataState.Live || quoteSynthetic) && !(quoteSynthetic && ViewFormat.IsSynthetic(book)))
+                status += " · 시세 " + ViewFormat.Badge(quote);
             var hint = StatusText.Hint(reason);
 
             // Levels by rank; missing ranks stay as placeholder rows so the grid keeps its shape.
@@ -131,27 +138,32 @@ namespace SpatialTrading.Components
         { Title = title; PriceText = price; ChangeText = change; Status = status; }
 
         /// <summary>
-        /// Prefers the live quote. Without one (the gateway keeps quotes UNAVAILABLE after the close) the price is the last
-        /// candle close and the change is last close minus the previous candle close, both honestly from the series; the
-        /// status then carries the series' own state label. No change is shown when it cannot be computed.
+        /// Prefers the quote, but only when it comes from the series' own market (<paramref name="market"/> equals
+        /// <paramref name="quoteMarket"/>): in NXT hours the quote is NXT while the daily series stays KRX, and a KRX
+        /// header must never borrow the NXT price or its LIVE label. Otherwise (and when the gateway keeps quotes
+        /// UNAVAILABLE after the close) the price is the last candle close and the change is last close minus the previous
+        /// candle close, both honestly from the series; the status then carries the series' own state label. No change is
+        /// shown when it cannot be computed. Synthetic data reads "SYNTHETIC · 합성 예시".
         /// </summary>
         public static ChartHeaderView From(InstrumentRef instrument, Observation<CandleSeries> series,
-            Observation<QuoteSnapshot> quote, string interval, string market)
+            Observation<QuoteSnapshot> quote, string interval, string market, string quoteMarket)
         {
             if (instrument == null) throw new ArgumentNullException(nameof(instrument));
             var q = quote?.Value;
             var candles = series?.Value?.Candles;
-            string price, change;
+            string price, change, badge;
             DataState state; string reason;
-            if (q != null && q.LastPrice.HasValue)
+            if (q != null && q.LastPrice.HasValue && market == quoteMarket)
             {
                 price = ViewFormat.Number(q.LastPrice);
                 change = ViewFormat.Change(q.Change, q.ChangePercent);
                 state = quote.State; reason = quote.Reason;
+                badge = ViewFormat.Badge(quote);
             }
             else
             {
                 state = series?.State ?? DataState.Unavailable; reason = series?.Reason;
+                badge = ViewFormat.IsSynthetic(series) ? StatusText.Synthetic : ViewFormat.Badge(state, reason);
                 if (candles != null && candles.Count > 0)
                 {
                     var c = candles[candles.Count - 1].Close;
@@ -165,7 +177,7 @@ namespace SpatialTrading.Components
                 }
                 else { price = ViewFormat.None; change = ViewFormat.None; }
             }
-            var status = ViewFormat.Join(ViewFormat.Badge(state, reason), market, interval);
+            var status = ViewFormat.Join(badge, market, interval);
             return new ChartHeaderView(instrument.DisplayName, price, change, status);
         }
     }
@@ -185,8 +197,7 @@ namespace SpatialTrading.Components
         static readonly TimeSpan Kst = TimeSpan.FromHours(9);
 
         /// <summary>Honesty label for the feed, so an unavailable feed reads differently from an empty one.</summary>
-        public static string Status(Observation<NewsFeed> feed) =>
-            StatusText.State(feed?.State ?? DataState.Unavailable, feed?.Reason);
+        public static string Status(Observation<NewsFeed> feed) => StatusText.State(feed);
 
         /// <summary>
         /// Items mentioning the selected code first, newest first inside each group. "Today" for the time text is the
@@ -234,7 +245,7 @@ namespace SpatialTrading.Components
         {
             var b = balance?.Value;
             var state = balance?.State ?? DataState.Unavailable;
-            var status = ViewFormat.Badge(state, balance?.Reason);
+            var status = ViewFormat.Badge(balance);
             if (b == null)
                 return new BalanceView("", status, true, StatusText.State(state, balance?.Reason), "주문가능 " + ViewFormat.None,
                     ViewFormat.None, new List<BalanceRowView>().AsReadOnly());
@@ -285,6 +296,7 @@ namespace SpatialTrading.Components
 
         static Tuple<string, string> Stale<T>(Observation<T> o, string what) where T : class
         {
+            if (ViewFormat.IsSynthetic(o)) return Tuple.Create(StatusText.Synthetic, what + " 합성 예시 · 주문 준비 불가");
             var st = o?.State ?? DataState.Unavailable;
             if (st == DataState.Live || st == DataState.Delayed) return null;
             return Tuple.Create(ViewFormat.Badge(st, o?.Reason), what + " " + StatusText.State(st, o?.Reason));
@@ -308,11 +320,15 @@ namespace SpatialTrading.Components
             var price = ticket.Type == OrderType.Limit ? ViewFormat.Number(bestAsk) : OrderTypeTable.DisplayName(ticket.Type);
             var refOk = ticket.Type == OrderType.Limit ? bestAsk > 0m : lastPrice > 0m;
             // The book (and the quote for non-limit types) must be Live or Delayed; otherwise the state is the reason.
-            var bad = Stale(book, "호가") ?? (ticket.Type == OrderType.Limit ? null : Stale(quote, "시세"));
+            // Synthetic (preview) data never prepares an order, whichever of the book or the quote it is.
+            var synthetic = ViewFormat.IsSynthetic(book) ? Stale(book, "호가")
+                : ViewFormat.IsSynthetic(quote) ? Stale(quote, "시세") : null;
+            var bad = synthetic ?? Stale(book, "호가") ?? (ticket.Type == OrderType.Limit ? null : Stale(quote, "시세"));
             var prepare = !locked && ticket.HasSelection && OrderTypeTable.Enabled(ticket.Type, session) && refOk && bad == null;
             var badge = ticket.State == TicketState.Preflight ? "PREFLIGHT" : locked ? "LOCKED" : "READY";
             var lockReason = ticket.LockReason;
             if (!locked && bad != null) { badge = bad.Item1; lockReason = bad.Item2; }
+            if (synthetic != null) badge = synthetic.Item1; // a locked ticket keeps its reason; the badge names the data
             // The ticket fixes the quantity at 1 share; sell is locked by the ticket.
             return new OrderView(types, price, prepare, lockReason, badge, quantityLocked: true, sellLocked: ticket.SellLocked);
         }

@@ -195,7 +195,7 @@ namespace SpatialTrading.Market
                     switch (update.Capability)
                     {
                         case StreamCapability.Quote: _quotes[update.Code] = update.Quote; _markets[update.Code] = update.Market; break;
-                        case StreamCapability.Candles: break; // legacy 1-minute series: still sent by the gateway, no panel shows it
+                        case StreamCapability.Candles: break; // legacy 1-minute series: no longer streamed, still accepted and ignored
                         case StreamCapability.OrderBook: _books[update.Code] = update.Book; _markets[update.Code] = update.Market; break;
                         case StreamCapability.CandlesDaily: _daily[update.Code] = update.Candles; _intervalMarkets[update.Code + "|1D"] = update.Market; break;
                         case StreamCapability.CandlesFourHour: _fourHour[update.Code] = update.Candles; _intervalMarkets[update.Code + "|4H"] = update.Market; break;

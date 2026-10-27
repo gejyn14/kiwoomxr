@@ -40,6 +40,7 @@ namespace SpatialTrading.Spread
         private readonly OrderTicket _ticket = new OrderTicket();
         private readonly Dictionary<PanelId, SpreadPanel> _byId = new Dictionary<PanelId, SpreadPanel>();
         private readonly Dictionary<PanelId, string> _intervals = new Dictionary<PanelId, string>();
+        private readonly RenderMemo<PanelId> _rendered = new RenderMemo<PanelId>(); // last render inputs per panel
         private OrderPreview _preview; // cached once per 매수 준비; never re-prepared on render
         private PanelId _selected = PanelId.ChartSamsung;
         private TradingSession _session = TradingSession.Closed;
@@ -394,6 +395,7 @@ namespace SpatialTrading.Spread
                 }
             }
             if (_tray != null) _tray.Hide();
+            _rendered.Clear(); // every panel draws afresh after a reset
             Render();
             LayoutChanged?.Invoke();
         }
@@ -417,17 +419,36 @@ namespace SpatialTrading.Spread
             Render();
         }
 
+        /// <summary>
+        /// Redraws the panels whose inputs moved since their last render: the observations they read (immutable, so
+        /// compared by value reference and status), their rect, the selection, the session, the interval and the ticket.
+        /// The stream raises <see cref="MarketDataSession.Changed"/> at tick rate; an unrelated tick redraws nothing.
+        /// </summary>
         public void Render()
         {
             foreach (var panel in _panels)
-                if (panel != null) RenderPanel(panel.Id);
+                if (panel != null) RenderPanel(panel.Id, false);
         }
 
-        private void RenderPanel(PanelId id)
+        /// <summary>Redraws one panel now, whatever it showed before (layout operations and explicit user actions).</summary>
+        private void RenderPanel(PanelId id) => RenderPanel(id, true);
+
+        private void RenderPanel(PanelId id, bool force)
         {
             var panel = Panel(id);
-            if (panel == null || _market == null || _layout.IsDismissed(id) || !panel.gameObject.activeSelf) return;
+            if (panel == null || _market == null || _layout.IsDismissed(id) || !panel.gameObject.activeSelf)
+            {
+                _rendered.Forget(id); // a panel that comes back always draws afresh
+                return;
+            }
             var rect = _layout[id];
+            // True when this panel already shows exactly these inputs; otherwise records them for the render that follows.
+            bool Same(params object[] inputs)
+            {
+                if (!force && _rendered.Unchanged(id, inputs)) return true;
+                _rendered.Remember(id, inputs);
+                return false;
+            }
             // A renderer failure never blocks the other panels.
             try
             {
@@ -438,38 +459,60 @@ namespace SpatialTrading.Spread
                         var instrument = InstrumentFor(id);
                         var interval = IntervalOf(id);
                         var series = interval == ChartPanel.FourHour ? _market.FourHour(instrument.Code) : _market.Daily(instrument.Code);
-                        var view = ChartHeaderView.From(instrument, series, _market.Quote(instrument.Code), interval,
-                            _market.MarketLabel(instrument.Code, interval));
+                        var quote = _market.Quote(instrument.Code);
+                        // The quote leads the header only when it comes from the series' own market (NXT hours: 1D stays KRX).
+                        var seriesMarket = _market.MarketLabel(instrument.Code, interval);
+                        var quoteMarket = _market.MarketLabel(instrument.Code);
+                        var selected = id == _selected;
+                        if (Same(RenderMemo.Of(series), RenderMemo.Of(quote), interval, seriesMarket, quoteMarket, rect, selected)) break;
+                        var view = ChartHeaderView.From(instrument, series, quote, interval, seriesMarket, quoteMarket);
                         chart.Render(view, series?.Value, interval, rect);
-                        chart.SetSelected(id == _selected);
+                        chart.SetSelected(selected);
                         break;
                     }
                     case OrderBookPanel book:
                     {
                         var instrument = SelectedInstrument;
-                        book.Render(OrderBookView.From(_market.Book(instrument.Code), _market.Quote(instrument.Code),
-                            SpreadLayout.BookDepthFor(rect), instrument, _market.MarketLabel(instrument.Code)), rect);
+                        var snapshot = _market.Book(instrument.Code);
+                        var quote = _market.Quote(instrument.Code);
+                        var market = _market.MarketLabel(instrument.Code);
+                        if (Same(RenderMemo.Of(snapshot), RenderMemo.Of(quote), instrument.Code, market, rect)) break;
+                        book.Render(OrderBookView.From(snapshot, quote, SpreadLayout.BookDepthFor(rect), instrument, market), rect);
                         break;
                     }
                     case NewsPanel news:
                     {
                         var feed = _market.News();
-                        news.Render(NewsView.Rank(feed, SelectedInstrument.Code, NowKst, NewsPanel.RowsFor(rect)), NewsView.Status(feed), rect);
+                        var code = SelectedInstrument.Code;
+                        if (Same(RenderMemo.Of(feed), code, _newsMinute, rect)) break;
+                        news.Render(NewsView.Rank(feed, code, NowKst, NewsPanel.RowsFor(rect)), NewsView.Status(feed), rect);
                         break;
                     }
                     case BalancePanel balance:
-                        balance.Render(BalanceView.From(_market.Balance()), rect);
+                    {
+                        var account = _market.Balance();
+                        if (Same(RenderMemo.Of(account), rect)) break;
+                        balance.Render(BalanceView.From(account), rect);
                         break;
+                    }
                     case OrderPanel order:
                     {
                         if (_ticket.State != TicketState.Preflight) _preview = null;
                         var code = SelectedInstrument.Code;
-                        order.Render(OrderView.From(_ticket, _market.Book(code), _session, _market.Quote(code)), rect, _preview);
+                        var snapshot = _market.Book(code);
+                        var quote = _market.Quote(code);
+                        if (Same(RenderMemo.Of(snapshot), RenderMemo.Of(quote), code, _session, rect, _ticket.State, _ticket.Type,
+                                _ticket.LockReason, _ticket.HasSelection, _preview)) break;
+                        order.Render(OrderView.From(_ticket, snapshot, _session, quote), rect, _preview);
                         break;
                     }
                 }
             }
-            catch (Exception error) { Debug.LogException(error, panel); }
+            catch (Exception error)
+            {
+                _rendered.Forget(id); // retried on the next change
+                Debug.LogException(error, panel);
+            }
         }
 
         // ---------- editor / Mac backup: mouse ----------

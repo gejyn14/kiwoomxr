@@ -6,6 +6,8 @@ namespace SpatialTrading.Components
     public static class StatusText
     {
         public const string MarketClosed = "MARKET_CLOSED";
+        /// <summary>Label for any synthetic (preview) observation, whatever its state: it is never market data.</summary>
+        public const string Synthetic = "SYNTHETIC · 합성 예시";
 
         public static string Name(DataState state)
         {
@@ -23,6 +25,10 @@ namespace SpatialTrading.Components
 
         /// <summary>State label; after the close the last session's values read as "장 마감".</summary>
         public static string State(DataState state, string reason) => reason == MarketClosed ? "장 마감" : Name(state);
+
+        /// <summary><see cref="State(DataState, string)"/>, except that synthetic data always reads <see cref="Synthetic"/>.</summary>
+        public static string State<T>(Observation<T> o) where T : class =>
+            o?.Origin == DataOrigin.Synthetic ? Synthetic : State(o?.State ?? DataState.Unavailable, o?.Reason);
 
         /// <summary>Connection advice only for link and broker reasons; never for a closed market.</summary>
         public static string Hint(string reason)

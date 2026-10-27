@@ -125,8 +125,8 @@ namespace SpatialTrading.Tests
             var up = new QuoteSnapshot("005930", 225000m, 500m, null, 100);
             var dn = new QuoteSnapshot("005930", 224000m, -1200m, -0.53m, 100);
             var empty = Live(new CandleSeries("005930", "D", new Candle[0]));
-            Assert.That(ChartHeaderView.From(TraderCatalog.Samsung, empty, Live(up), "일봉", "KRX").ChangeText, Is.EqualTo("+500"));
-            var h = ChartHeaderView.From(TraderCatalog.Samsung, empty, Live(dn), "일봉", "KRX");
+            Assert.That(ChartHeaderView.From(TraderCatalog.Samsung, empty, Live(up), "일봉", "KRX", "KRX").ChangeText, Is.EqualTo("+500"));
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, empty, Live(dn), "일봉", "KRX", "KRX");
             Assert.That(h.ChangeText, Is.EqualTo("−1,200 (−0.53%)"));
             Assert.That(h.PriceText, Is.EqualTo("224,000"));
             Assert.That(h.Status, Is.EqualTo("LIVE · KRX · 일봉"));
@@ -142,7 +142,7 @@ namespace SpatialTrading.Tests
             });
             var series = new Observation<CandleSeries>(s, DataState.Stale, DataOrigin.Kiwoom, Now, Now, StatusText.MarketClosed);
             var q = new Observation<QuoteSnapshot>(null, DataState.Unavailable, DataOrigin.Kiwoom, null);
-            var h = ChartHeaderView.From(TraderCatalog.Samsung, series, q, "일봉", "KRX");
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, series, q, "일봉", "KRX", null);
             Assert.That(h.PriceText, Is.EqualTo("225,000"));
             Assert.That(h.Status, Is.EqualTo("장 마감 · KRX · 일봉"));
             Assert.That(h.ChangeText, Is.EqualTo("+1,000 (+0.45%)"));
@@ -282,6 +282,92 @@ namespace SpatialTrading.Tests
             Assert.That(v.Asks.Count, Is.EqualTo(2));
             Assert.That(v.Asks[0].PriceText, Is.EqualTo("225,500"));
             Assert.That(v.Status, Does.Contain("STALE"));
+        }
+
+        // ---------- synthetic preview data ----------
+
+        const string SyntheticLabel = "SYNTHETIC · 합성 예시";
+
+        [Test]
+        public void PreviewDataReadsSyntheticOnEveryViewNeverDelayed()
+        {
+            var samsung = TraderCatalog.Samsung;
+            var book = PreviewMarketData.Book(samsung);
+            var quote = PreviewMarketData.Quote(samsung);
+            var candles = PreviewMarketData.Candles(samsung);
+            Assert.That(book.State, Is.EqualTo(DataState.Delayed)); // the preview fixtures themselves are Delayed
+
+            var b = OrderBookView.From(book, quote, 5, samsung, null);
+            Assert.That(b.Status, Does.StartWith(SyntheticLabel));
+            Assert.That(b.Status, Does.Not.Contain("DELAYED"));
+
+            var h = ChartHeaderView.From(samsung, candles, quote, "1D", null, null);
+            Assert.That(h.Status, Does.StartWith(SyntheticLabel));
+            Assert.That(h.Status, Does.Not.Contain("DELAYED"));
+            var fallback = ChartHeaderView.From(samsung, candles, null, "1D", null, null);
+            Assert.That(fallback.Status, Does.StartWith(SyntheticLabel));
+
+            var balance = BalanceView.From(new Observation<BalanceSnapshot>(null, DataState.Unavailable, DataOrigin.Synthetic, null,
+                reason: "PREVIEW_NO_ACCOUNT_DATA"));
+            Assert.That(balance.Status, Is.EqualTo(SyntheticLabel));
+            var news = new Observation<NewsFeed>(null, DataState.Unavailable, DataOrigin.Synthetic, null, reason: "PREVIEW_NO_NEWS_DATA");
+            Assert.That(NewsView.Status(news), Is.EqualTo(SyntheticLabel));
+
+            var t = new OrderTicket();
+            t.Select(samsung, TradingSession.KrxRegular);
+            var o = OrderView.From(t, book, TradingSession.KrxRegular, quote);
+            Assert.That(o.Badge, Is.EqualTo(SyntheticLabel));
+            Assert.That(o.PrepareEnabled, Is.False);
+            Assert.That(o.LockReason, Does.Contain("합성 예시"));
+        }
+
+        [Test]
+        public void OrderViewRefusesASyntheticBookOrQuoteWithALabelledReason()
+        {
+            var samsung = TraderCatalog.Samsung;
+            var t = new OrderTicket();
+            t.Select(samsung, TradingSession.Nxt); // limit order: prices off the book alone
+            var liveBook = Live(Book(new long[] { 1 }, new long[] { 1 }));
+            var syntheticQuote = PreviewMarketData.Quote(samsung);
+            var v = OrderView.From(t, liveBook, TradingSession.Nxt, syntheticQuote);
+            Assert.That(v.PrepareEnabled, Is.False);
+            Assert.That(v.Badge, Is.EqualTo(SyntheticLabel));
+            Assert.That(v.LockReason, Is.EqualTo("시세 합성 예시 · 주문 준비 불가"));
+
+            var w = OrderView.From(t, PreviewMarketData.Book(samsung), TradingSession.Nxt);
+            Assert.That(w.PrepareEnabled, Is.False);
+            Assert.That(w.LockReason, Is.EqualTo("호가 합성 예시 · 주문 준비 불가"));
+
+            // A locked ticket keeps its own reason; the badge still names the synthetic data.
+            var locked = new OrderTicket();
+            locked.Select(TraderCatalog.SkHynix, TradingSession.Nxt);
+            var l = OrderView.From(locked, PreviewMarketData.Book(TraderCatalog.SkHynix), TradingSession.Nxt);
+            Assert.That(l.Badge, Is.EqualTo(SyntheticLabel));
+            Assert.That(l.LockReason, Is.EqualTo("시연 안전장치: 삼성전자만"));
+        }
+
+        // ---------- chart header market matching ----------
+
+        [Test]
+        public void ChartHeaderDuringNxtHoursUsesTheKrxDailySeriesNotTheNxtQuote()
+        {
+            var s = new CandleSeries("005930", "1D", new[]
+            {
+                new Candle("20261027", 220000m, 226000m, 219000m, 224000m, 1, true),
+                new Candle("20261028", 224000m, 226000m, 223000m, 225000m, 1, false),
+            });
+            var daily = new Observation<CandleSeries>(s, DataState.Delayed, DataOrigin.Kiwoom, Now, Now, StatusText.MarketClosed);
+            var nxtQuote = Live(new QuoteSnapshot("005930", 226500m, 1500m, 0.67m, 100));
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, daily, nxtQuote, "1D", "KRX", "NXT");
+            Assert.That(h.Status, Is.EqualTo("장 마감 · KRX · 1D"));
+            Assert.That(h.PriceText, Is.EqualTo("225,000"));
+            Assert.That(h.ChangeText, Is.EqualTo("+1,000 (+0.45%)"));
+
+            // The 4H series follows NXT in NXT hours, so the NXT quote leads it.
+            var four = new Observation<CandleSeries>(new CandleSeries("005930", "4H", s.Candles), DataState.Live, DataOrigin.Kiwoom, Now, Now);
+            var h4 = ChartHeaderView.From(TraderCatalog.Samsung, four, nxtQuote, "4H", "NXT", "NXT");
+            Assert.That(h4.Status, Is.EqualTo("LIVE · NXT · 4H"));
+            Assert.That(h4.PriceText, Is.EqualTo("226,500"));
         }
     }
 }
