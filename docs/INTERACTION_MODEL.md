@@ -40,7 +40,7 @@ Quest 3 eye tracking is not an input capability. “Selected visual context” m
 
 Every control has a 55 mm target (checked by the Validate step), a cyan hover glow and press feedback, and a short tick sound on a successful press. The palm tray is off by default so a palm-up gesture cannot collide with the Quest system menu; its code remains as a dev aid (`T`, or controller Y, pins the tray ahead of the head) and palm detection can be switched on in the component. Without an XR device the workspace follows the camera until it has held still for 10 frames or a drag starts, then pins once. After a Quest system recenter the existing tracking-origin listener places the spread in front of the headset again.
 
-Editor keys: `R` reset layout, `1`-`4` select 관심종목 rows, `T` pins the palm tray (only meaningful when the tray is enabled).
+Editor keys: `R` reset layout, `1`-`4` select 관심종목 rows, `T` (and the controller Y button) pins the palm tray as a dev aid, even though palm detection is off by default.
 
 The mouse backup can press the dock's buttons and select 관심종목 rows (they have colliders), but it still cannot press the other canvas buttons: 1D / 4H, the 유형 order type buttons, 매수 준비, 확인 and the panels' × close. In an editor without the simulator those need the simulator's controller ray or a headset.
 
