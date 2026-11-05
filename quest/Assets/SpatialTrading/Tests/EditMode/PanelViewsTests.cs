@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using NUnit.Framework;
 using SpatialTrading.Components;
@@ -368,6 +369,92 @@ namespace SpatialTrading.Tests
             var h4 = ChartHeaderView.From(TraderCatalog.Samsung, four, nxtQuote, "4H", "NXT", "NXT");
             Assert.That(h4.Status, Is.EqualTo("LIVE · NXT · 4H"));
             Assert.That(h4.PriceText, Is.EqualTo("226,500"));
+        }
+
+        static Observation<CandleSeries> Daily(string code, IEnumerable<Candle> candles, DataOrigin origin = DataOrigin.Kiwoom) =>
+            new Observation<CandleSeries>(new CandleSeries(code, "1D", candles), DataState.Delayed, origin, Now, Now);
+
+        static IEnumerable<Candle> Closes(int n)
+        {
+            for (var i = 0; i < n; i++)
+                yield return new Candle("202610" + (i + 1).ToString("00"), 100m + i, 200m, 90m, 100m + i, 1, true);
+        }
+
+        [Test]
+        public void HeaderUsesReferenceWhenQuoteIsOtherMarket()
+        {
+            var daily = Daily("005930", new[]
+            {
+                new Candle("20261027", 220000m, 226000m, 219000m, 221500m, 1, true),
+                new Candle("20261028", 201000m, 222000m, 200000m, 201500m, 1, true, 218000m),
+            });
+            var nxt = Live(new QuoteSnapshot("005930", 201500m, -16500m, -7.57m, 100));
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, daily, nxt, "1D", "KRX", "NXT");
+            Assert.That(h.ChangeText, Is.EqualTo(ViewFormat.Change(-16500m, -7.57m)));
+            Assert.That(h.Direction, Is.EqualTo(-1));
+        }
+
+        [Test]
+        public void HeaderFallsBackToPreviousCloseWithoutReference()
+        {
+            var daily = Daily("005930", new[]
+            {
+                new Candle("20261027", 220000m, 226000m, 219000m, 224000m, 1, true),
+                new Candle("20261028", 224000m, 226000m, 223000m, 225000m, 1, true),
+            });
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, daily, null, "1D", "KRX", null);
+            Assert.That(h.ChangeText, Is.EqualTo("+1,000 (+0.45%)"));
+            Assert.That(h.Direction, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void HeaderDirectionIsZeroWhenChangeUnknown()
+        {
+            var one = Daily("005930", new[] { new Candle("20261028", 224000m, 226000m, 223000m, 225000m, 1, true) });
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, one, null, "1D", "KRX", null);
+            Assert.That(h.ChangeText, Is.EqualTo(ViewFormat.None));
+            Assert.That(h.Direction, Is.EqualTo(0));
+            var none = ChartHeaderView.From(TraderCatalog.Samsung, null, null, "1D", "KRX", null);
+            Assert.That(none.Direction, Is.EqualTo(0));
+        }
+
+        static IReadOnlyList<WatchlistRowView> Rows(Func<string, Observation<CandleSeries>> daily, Func<string, Observation<QuoteSnapshot>> quote, InstrumentRef sel) =>
+            WatchlistView.From(TraderCatalog.Charts, daily, quote, c => "KRX", c => "KRX", sel);
+
+        [Test]
+        public void WatchlistRowsFollowCatalogOrderAndMarkSelection()
+        {
+            var rows = Rows(c => Daily(c, Closes(3)), c => null, TraderCatalog.SkHynix);
+            Assert.That(rows.Select(r => r.Instrument), Is.EqualTo(TraderCatalog.Charts));
+            Assert.That(rows.Select(r => r.Name), Is.EqualTo(TraderCatalog.Charts.Select(i => i.DisplayName)));
+            Assert.That(rows.Where(r => r.Selected).Select(r => r.Instrument), Is.EqualTo(new[] { TraderCatalog.SkHynix }));
+        }
+
+        [Test]
+        public void WatchlistSparkIsLastTwentyCloses()
+        {
+            var rows = Rows(c => Daily(c, Closes(30)), c => null, TraderCatalog.Samsung);
+            Assert.That(rows[0].Spark.Count, Is.EqualTo(20));
+            Assert.That(rows[0].Spark[0], Is.EqualTo(110m));
+            Assert.That(rows[0].Spark[19], Is.EqualTo(129m));
+        }
+
+        [Test]
+        public void WatchlistRowWithoutDataShowsDashAndStatus()
+        {
+            var rows = Rows(c => null, c => null, TraderCatalog.Samsung);
+            Assert.That(rows[0].PriceText, Is.EqualTo(ViewFormat.None));
+            Assert.That(rows[0].ChangeText, Is.EqualTo(ViewFormat.None));
+            Assert.That(rows[0].Direction, Is.EqualTo(0));
+            Assert.That(rows[0].Status, Does.Contain("UNAVAILABLE"));
+            Assert.That(rows[0].Spark, Is.Empty);
+        }
+
+        [Test]
+        public void WatchlistSyntheticRowSaysSynthetic()
+        {
+            var rows = Rows(c => Daily(c, Closes(3), DataOrigin.Synthetic), c => null, TraderCatalog.Samsung);
+            Assert.That(rows[0].Status, Does.Contain(StatusText.Synthetic));
         }
     }
 }

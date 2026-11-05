@@ -35,9 +35,12 @@ namespace SpatialTrading.Market
                 var bars = new List<Candle>();
                 foreach (var token in Array(item, "candles"))
                 {
-                    var bar = Object(token, "period_key", "open", "high", "low", "close", "volume", "complete");
+                    // "reference" (the broker's prior-day reference price) is optional: older payloads omit the key.
+                    var bar = token is JObject raw && raw.ContainsKey("reference")
+                        ? Object(token, "period_key", "open", "high", "low", "close", "volume", "complete", "reference")
+                        : Object(token, "period_key", "open", "high", "low", "close", "volume", "complete");
                     bars.Add(new Candle(Text(bar, "period_key"), Price(bar, "open"), Price(bar, "high"),
-                        Price(bar, "low"), Price(bar, "close"), Quantity(bar, "volume"), Boolean(bar, "complete", true)));
+                        Price(bar, "low"), Price(bar, "close"), Quantity(bar, "volume"), Boolean(bar, "complete", true), bar.ContainsKey("reference") ? Money(bar, "reference") : null));
                 }
                 series = new CandleSeries(code, Text(item, "interval"), bars, Text(item, "adjustment"),
                     Boolean(item, "complete_history", false).Value);

@@ -100,5 +100,29 @@ namespace SpatialTrading.Tests
             Assert.That(book.Asks[0].Price, Is.Null);
             Assert.That(book.Asks[0].Quantity, Is.Zero);
         }
+
+        static string CandleWith(string extra) => "{\"interval\":\"1D\",\"adjustment\":\"ADJUSTED\",\"complete_history\":false,\"candles\":[{\"period_key\":\"20260917\",\"open\":\"100\",\"high\":\"110\",\"low\":\"90\",\"close\":\"105\",\"volume\":\"10\",\"complete\":true" + extra + "}]}";
+
+        [Test]
+        public void CandleReferenceDecodes()
+        {
+            var value = JObject.Parse(CandleWith(",\"reference\":\"218000\""));
+            Assert.That(GatewayContract.Candles(Envelope(value).ToString(), "005930", Correlation).Value.Candles[0].Reference, Is.EqualTo(218000m));
+        }
+
+        [TestCase(",\"reference\":null")]
+        [TestCase("")]
+        public void CandleReferenceNullOrMissingIsNull(string extra)
+        {
+            var value = JObject.Parse(CandleWith(extra));
+            Assert.That(GatewayContract.Candles(Envelope(value).ToString(), "005930", Correlation).Value.Candles[0].Reference, Is.Null);
+        }
+
+        [Test]
+        public void CandleReferenceZeroIsRejected()
+        {
+            var value = JObject.Parse(CandleWith(",\"reference\":\"0\""));
+            Assert.Throws<ArgumentException>(() => GatewayContract.Candles(Envelope(value).ToString(), "005930", Correlation)); // same as any invalid candle
+        }
     }
 }

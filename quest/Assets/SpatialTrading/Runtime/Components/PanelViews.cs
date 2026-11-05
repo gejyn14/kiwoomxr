@@ -133,9 +133,11 @@ namespace SpatialTrading.Components
         public string PriceText { get; }
         public string ChangeText { get; }
         public string Status { get; }
+        /// <summary>Sign of the day-over-day change: -1, 0 or 1; 0 when the change cannot be computed.</summary>
+        public int Direction { get; }
 
-        ChartHeaderView(string title, string price, string change, string status)
-        { Title = title; PriceText = price; ChangeText = change; Status = status; }
+        ChartHeaderView(string title, string price, string change, string status, int direction)
+        { Title = title; PriceText = price; ChangeText = change; Status = status; Direction = direction; }
 
         /// <summary>
         /// Prefers the quote, but only when it comes from the series' own market (<paramref name="market"/> equals
@@ -152,11 +154,13 @@ namespace SpatialTrading.Components
             var q = quote?.Value;
             var candles = series?.Value?.Candles;
             string price, change, badge;
+            decimal? delta = null;
             DataState state; string reason;
             if (q != null && q.LastPrice.HasValue && market == quoteMarket)
             {
                 price = ViewFormat.Number(q.LastPrice);
                 change = ViewFormat.Change(q.Change, q.ChangePercent);
+                delta = q.Change;
                 state = quote.State; reason = quote.Reason;
                 badge = ViewFormat.Badge(quote);
             }
@@ -168,17 +172,61 @@ namespace SpatialTrading.Components
                 {
                     var c = candles[candles.Count - 1].Close;
                     price = ViewFormat.Number(c);
-                    if (candles.Count > 1)
+                    // The broker's own prior-day reference wins; otherwise the previous candle's close.
+                    var reference = candles[candles.Count - 1].Reference
+                        ?? (candles.Count > 1 ? candles[candles.Count - 2].Close : (decimal?)null);
+                    if (reference.HasValue)
                     {
-                        var prev = candles[candles.Count - 2].Close;
-                        change = ViewFormat.Change(c - prev, prev > 0m ? (c - prev) * 100m / prev : (decimal?)null);
+                        delta = c - reference.Value;
+                        change = ViewFormat.Change(delta, reference.Value > 0m ? delta * 100m / reference.Value : (decimal?)null);
                     }
                     else change = ViewFormat.None;
                 }
                 else { price = ViewFormat.None; change = ViewFormat.None; }
             }
             var status = ViewFormat.Join(badge, market, interval);
-            return new ChartHeaderView(instrument.DisplayName, price, change, status);
+            return new ChartHeaderView(instrument.DisplayName, price, change, status, delta.HasValue ? Math.Sign(delta.Value) : 0);
+        }
+    }
+
+    public sealed class WatchlistRowView
+    {
+        public InstrumentRef Instrument { get; }
+        public string Name { get; }
+        public string PriceText { get; }
+        public string ChangeText { get; }
+        public int Direction { get; }
+        public string Status { get; }
+        public IReadOnlyList<decimal> Spark { get; }
+        public bool Selected { get; }
+        public WatchlistRowView(InstrumentRef instrument, string name, string priceText, string changeText, int direction,
+            string status, IReadOnlyList<decimal> spark, bool selected)
+        {
+            Instrument = instrument; Name = name; PriceText = priceText; ChangeText = changeText;
+            Direction = direction; Status = status; Spark = spark; Selected = selected;
+        }
+    }
+
+    public static class WatchlistView
+    {
+        /// <summary>One row per instrument in the given order; every figure comes from the daily chart header so the list and the chart never disagree.</summary>
+        public static IReadOnlyList<WatchlistRowView> From(IReadOnlyList<InstrumentRef> instruments,
+            Func<string, Observation<CandleSeries>> daily, Func<string, Observation<QuoteSnapshot>> quote,
+            Func<string, string> dailyMarket, Func<string, string> quoteMarket, InstrumentRef selected, int sparkCount = 20)
+        {
+            if (instruments == null) throw new ArgumentNullException(nameof(instruments));
+            var rows = new List<WatchlistRowView>();
+            foreach (var i in instruments)
+            {
+                var series = daily(i.Code);
+                var h = ChartHeaderView.From(i, series, quote(i.Code), "1D", dailyMarket(i.Code), quoteMarket(i.Code));
+                var candles = series?.Value?.Candles;
+                var spark = candles == null ? new List<decimal>()
+                    : candles.Skip(Math.Max(0, candles.Count - sparkCount)).Select(c => c.Close).ToList();
+                rows.Add(new WatchlistRowView(i, h.Title, h.PriceText, h.ChangeText, h.Direction, h.Status,
+                    spark.AsReadOnly(), selected != null && selected.Code == i.Code));
+            }
+            return rows.AsReadOnly();
         }
     }
 

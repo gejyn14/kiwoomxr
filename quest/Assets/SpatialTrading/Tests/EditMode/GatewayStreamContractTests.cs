@@ -285,5 +285,23 @@ namespace SpatialTrading.Tests
             Assert.That((string)obj["token"], Is.EqualTo("a\"b\\c"));
             Assert.That(obj["codes"].ToObject<string[]>(), Is.EqualTo(new[] { "005930", "000660" }));
         }
+
+        [Test]
+        public void CandleReferenceDecodesOnTheStreamPath()
+        {
+            Assert.That(Reference(DailyValue.Replace("\"complete\":true}", "\"complete\":true,\"reference\":\"218000\"}")), Is.EqualTo(218000m));
+            Assert.That(Reference(DailyValue.Replace("\"complete\":true}", "\"complete\":true,\"reference\":null}")), Is.Null);
+            Assert.That(Reference(DailyValue), Is.Null);
+        }
+
+        [Test]
+        public void CandleReferenceZeroIsRejectedOnTheStreamPath()
+        {
+            var zero = DailyValue.Replace("\"complete\":true}", "\"complete\":true,\"reference\":\"0\"}");
+            Assert.Throws<FormatException>(() => GatewayStreamContract.Parse(Envelope("candles_1d", "005930", "KIWOOM", zero), Sub));
+        }
+
+        static decimal? Reference(string value) =>
+            ((StreamUpdate)GatewayStreamContract.Parse(Envelope("candles_1d", "005930", "KIWOOM", value), Sub)).Candles.Value.Candles[0].Reference;
     }
 }

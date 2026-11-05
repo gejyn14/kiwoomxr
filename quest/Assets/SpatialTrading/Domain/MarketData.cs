@@ -53,12 +53,15 @@ namespace SpatialTrading.Domain
         public decimal Close { get; }
         public long? Volume { get; }
         public bool? Complete { get; }
-        public Candle(string periodKey, decimal open, decimal high, decimal low, decimal close, long? volume, bool? complete)
+        /// <summary>The broker's prior-day reference price (close minus its own day-over-day change); null when not reported.</summary>
+        public decimal? Reference { get; }
+        public Candle(string periodKey, decimal open, decimal high, decimal low, decimal close, long? volume, bool? complete,
+            decimal? reference = null)
         {
             if (string.IsNullOrWhiteSpace(periodKey) || low <= 0 || high < low ||
-                open < low || open > high || close < low || close > high || volume < 0)
+                open < low || open > high || close < low || close > high || volume < 0 || reference <= 0)
                 throw new ArgumentException("Invalid candle bounds or identity.");
-            PeriodKey = periodKey; Open = open; High = high; Low = low; Close = close; Volume = volume; Complete = complete;
+            PeriodKey = periodKey; Open = open; High = high; Low = low; Close = close; Volume = volume; Complete = complete; Reference = reference;
         }
     }
 
