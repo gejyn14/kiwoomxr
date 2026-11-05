@@ -158,3 +158,15 @@ def test_news_feed_must_be_newest_first_and_bounded():
         NewsFeed(items=tuple(_news_item(0) for _ in range(41)))
     with pytest.raises(ValidationError):
         _news_item(title="x" * 201)
+
+
+def test_candle_reference_wire():
+    base = dict(period_key="20261105", open="201000", high="203000", low="200000", close=Decimal("201500"),
+                volume=1, complete=False)
+    assert Candle(**base, reference=Decimal("218000")).model_dump(mode="json")["reference"] == "218000"
+    assert Candle(**base, reference=None).model_dump(mode="json")["reference"] is None
+    assert Candle(**base).model_dump(mode="json")["reference"] is None
+    with pytest.raises(ValidationError):
+        Candle(**base, reference=Decimal("0"))
+    with pytest.raises(ValidationError):
+        Candle(**base, reference=218000.5)

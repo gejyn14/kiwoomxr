@@ -50,7 +50,8 @@ def _series(bars: Sequence[Bar], interval: str, code: str) -> CandleSeries:
     return CandleSeries(
         interval=interval, adjustment="adjusted" if interval == "1D" and not _is_index(code) else "unadjusted",
         candles=tuple(Candle(period_key=_key(b.start, interval), open=b.open, high=b.high, low=b.low,
-                             close=b.close, volume=b.volume, complete=i != last)
+                             close=b.close, volume=b.volume, complete=i != last,
+                             reference=b.reference)
                       for i, b in enumerate(bars)))
 
 
@@ -100,7 +101,7 @@ class ChartStore:
             changed = False
             if trade.market is Market.KRX and not _is_index(trade.code):
                 changed |= self._tick(trade.code, Market.KRX, "1D", trade.at, trade.price,
-                                      volume=trade.acc_volume, add=False, now=now)
+                                      volume=trade.acc_volume, add=False, now=now, change=trade.change)
             changed |= self._tick(trade.code, trade.market, "4H", trade.at, trade.price,
                                   volume=trade.volume, add=True, now=now)
             return changed
@@ -116,7 +117,8 @@ class ChartStore:
             quote = Quote(last_price=price, change=change, change_percent=change_percent)
             prior = self._quotes.get(code)
             fresher = prior is None or at >= prior[1]
-            changed = self._tick(code, Market.KRX, "1D", at, price, volume=None, add=False, now=now)
+            changed = self._tick(code, Market.KRX, "1D", at, price, volume=None, add=False, now=now,
+                                 change=change)
             changed |= self._tick(code, Market.KRX, "4H", at, price, volume=None, add=False, now=now)
             if fresher:
                 self._quotes[code] = (quote, at, now)
@@ -127,7 +129,7 @@ class ChartStore:
             return False
 
     def _tick(self, code: str, market: Market, interval: str, at: datetime, price: Decimal,
-              *, volume: int | None, add: bool, now: datetime) -> bool:
+              *, volume: int | None, add: bool, now: datetime, change: Decimal | None = None) -> bool:
         start = _day_start(at) if interval == "1D" else bucket_start(at, market)
         if start is None:
             return False
@@ -148,7 +150,10 @@ class ChartStore:
             if fresh:
                 ticks[start] = at
         elif start > bars[-1].start:
-            bars.append(Bar(start, price, price, price, price, volume or 0))
+            reference = price - change if interval == "1D" and change is not None else None
+            if reference is not None and reference <= 0:
+                reference = None
+            bars.append(Bar(start, price, price, price, price, volume or 0, reference))
             ticks[start] = at
             bars = bars[-MAX_BARS:]
         else:

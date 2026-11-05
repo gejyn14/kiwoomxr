@@ -86,16 +86,21 @@ class Candle(Contract):
     close: Decimal = Field(gt=0, max_digits=28, decimal_places=8)
     volume: int | None = Field(default=None, ge=0, le=9223372036854775807, strict=True)
     complete: bool | None = None
+    reference: Decimal | None = Field(default=None, gt=0, max_digits=28, decimal_places=8)
 
     @field_serializer("open", "high", "low", "close")
     def decimal_wire(self, value):
         return format(value, "f")
 
+    @field_serializer("reference")
+    def reference_wire(self, value):
+        return None if value is None else format(value, "f")
+
     @field_serializer("volume")
     def quantity_wire(self, value):
         return None if value is None else str(value)
 
-    @field_validator("open", "high", "low", "close", mode="before")
+    @field_validator("open", "high", "low", "close", "reference", mode="before")
     @classmethod
     def no_binary_floats(cls, value):
         return Quote.no_binary_floats(value)

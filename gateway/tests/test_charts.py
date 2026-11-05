@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 
@@ -150,3 +151,58 @@ def test_out_of_order_index_tick_keeps_close_but_widens_range():
         c = s.observation("001", interval, CID, True, None)[1].value.candles[-1]
         assert c.close == Decimal("2650") and c.low == Decimal("2630") and c.high == Decimal("2650")
     assert s.index_quote("001", CID, True, None).value.last_price == Decimal("2650")
+
+
+def _ref_bar(start, price, reference):
+    return replace(bar(start, price), reference=Decimal(str(reference)))
+
+
+def _last(s, interval="1D", code="005930"):
+    return s.observation(code, interval, CID, True, None)[1].value.candles[-1]
+
+
+def _ref_trade(at, price, change):
+    return replace(trade(at, price), change=change)
+
+
+def test_live_tick_keeps_daily_reference():
+    s = store(Clock(kst(10, 1)))
+    s.seed("005930", Market.KRX, "1D", [_ref_bar(kst(9, 0, 27), 223000, 215000), _ref_bar(kst(9, 0), 201500, 218000)])
+    assert s.apply_trade(trade(kst(10, 1), 202000))
+    assert _last(s).close == Decimal("202000") and _last(s).reference == Decimal("218000")
+
+
+def test_new_day_bar_takes_reference_from_trade_change():
+    s = store(Clock(kst(10, 1, 29)))
+    s.seed("005930", Market.KRX, "1D", [_ref_bar(kst(9, 0), 218000, 215000)])
+    assert s.apply_trade(_ref_trade(kst(10, 1, 29), 205000, Decimal("-13000")))
+    assert _last(s).period_key == "20261029" and _last(s).reference == Decimal("218000")
+
+
+def test_new_day_bar_without_change_has_no_reference():
+    s = store(Clock(kst(10, 1, 29)))
+    s.seed("005930", Market.KRX, "1D", [_ref_bar(kst(9, 0), 218000, 215000)])
+    assert s.apply_trade(_ref_trade(kst(10, 1, 29), 205000, None))
+    assert _last(s).period_key == "20261029" and _last(s).reference is None
+
+
+def test_new_day_bar_with_nonpositive_reference_has_none():
+    s = store(Clock(kst(10, 1, 29)))
+    s.seed("005930", Market.KRX, "1D", [_ref_bar(kst(9, 0), 218000, 215000)])
+    assert s.apply_trade(_ref_trade(kst(10, 1, 29), 205000, Decimal("205000")))
+    assert _last(s).reference is None
+
+
+def test_index_new_day_bar_takes_reference_from_index_change():
+    s = store(Clock(kst(10, 0, 29)))
+    s.seed("001", Market.KRX, "1D", [bar(kst(9, 0), "5700")])
+    assert s.apply_index("001", Decimal("5383.8"), Decimal("-300"), Decimal("-5.3"), kst(10, 0, 29))
+    assert _last(s, code="001").period_key == "20261029"
+    assert _last(s, code="001").reference == Decimal("5683.8")
+
+
+def test_four_hour_bars_never_carry_reference():
+    s = store(Clock(kst(10, 1)))
+    s.seed("005930", Market.KRX, "4H", [bar(kst(9, 0), 100)])
+    assert s.apply_trade(_ref_trade(kst(13, 1), 105, Decimal("5")))
+    assert _last(s, "4H").period_key.endswith("1300") and _last(s, "4H").reference is None

@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from spatial_gateway.kiwoom.auth import TokenProvider
-from spatial_gateway.kiwoom.rest import KiwoomApiError, KiwoomRest
+from spatial_gateway.kiwoom.rest import KiwoomApiError, KiwoomRest, _parse_bar
 from spatial_gateway.kiwoom.values import KST
 from test_auth import Clock, make_settings
 
@@ -194,3 +194,28 @@ async def test_concurrent_requests_share_one_rest_spacing():
 def test_default_rest_spacing_is_a_quarter_second():
     import inspect
     assert inspect.signature(KiwoomRest).parameters["min_gap"].default == 0.25
+
+
+async def test_daily_bars_carry_reference_from_pred_pre():
+    rest, _, _ = build([_fx("ka10081_005930.json")])
+    bars = await rest.daily_candles("005930", date(2026, 10, 28))
+    by_day = {b.start.strftime("%Y%m%d"): b for b in bars}
+    assert by_day["20261027"].reference == Decimal("213000")
+    assert by_day["20261026"].reference == Decimal("215500")
+
+
+async def test_index_daily_bars_have_no_reference():
+    rest, _, _ = build([_fx("ka20006_001.json")])
+    bars = await rest.index_daily("001", date(2026, 10, 28))
+    assert bars and all(b.reference is None for b in bars)
+
+
+def test_daily_reference_edge_values():
+    row = {"dt": "20261105", "open_pric": "100", "high_pric": "110", "low_pric": "90", "cur_prc": "100",
+           "trde_qty": "1"}
+    assert _parse_bar({**row, "pred_pre": ""}, "dt", daily=True).reference is None
+    assert _parse_bar({**row, "pred_pre": "abc"}, "dt", daily=True).reference is None
+    assert _parse_bar({**row, "pred_pre": "+0"}, "dt", daily=True).reference == Decimal("100")
+    assert _parse_bar({**row, "pred_pre": "+100"}, "dt", daily=True).reference is None
+    assert _parse_bar({**row, "pred_pre": "+150"}, "dt", daily=True).reference is None
+    assert _parse_bar({**row}, "dt", daily=True).reference is None

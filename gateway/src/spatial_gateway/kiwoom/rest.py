@@ -30,6 +30,7 @@ class Bar:
     low: Decimal
     close: Decimal
     volume: int
+    reference: Decimal | None = None  # daily bars: prior-day reference price = close - pred_pre
 
 
 MinuteBar = Bar
@@ -231,4 +232,9 @@ def _parse_bar(row: dict, time_key: str = "cntr_tm", daily: bool = False, index:
         return None
     if not (low <= open_ <= high and low <= close <= high):
         return None
-    return Bar(start=start, open=open_, high=high, low=low, close=close, volume=volume)
+    reference = None
+    if daily and not index:
+        change = signed(_text(row, "pred_pre"))
+        if change is not None and close - change > 0:
+            reference = close - change
+    return Bar(start=start, open=open_, high=high, low=low, close=close, volume=volume, reference=reference)
