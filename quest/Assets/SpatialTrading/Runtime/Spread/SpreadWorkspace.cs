@@ -249,6 +249,7 @@ namespace SpatialTrading.Spread
 
         private void ChooseType(OrderType type)
         {
+            if (_layout.IsDismissed(PanelId.Order)) return; // a press during the dismiss flight must not revive a cancelled ticket
             var before = _ticket.Type;
             if (_ticket.TryChooseType(type) && type != before) _preview = null;
             RenderPanel(PanelId.Order);
@@ -257,6 +258,7 @@ namespace SpatialTrading.Spread
         /// <summary>매수 준비: prepares once and caches the preview. "확인" on the card sends nothing anywhere.</summary>
         private void Prepare()
         {
+            if (_layout.IsDismissed(PanelId.Order)) return; // see ChooseType
             var code = SelectedInstrument.Code;
             var ask = _market?.Book(code)?.Value?.Asks.FirstOrDefault(l => l.Rank == 1);
             decimal? bestAsk = ask != null && ask.Price > 0m ? ask.Price : (decimal?)null;

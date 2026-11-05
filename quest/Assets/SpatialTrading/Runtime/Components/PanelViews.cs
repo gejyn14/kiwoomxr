@@ -133,7 +133,7 @@ namespace SpatialTrading.Components
         public string PriceText { get; }
         public string ChangeText { get; }
         public string Status { get; }
-        /// <summary>Sign of the day-over-day change: -1, 0 or 1; 0 when the change cannot be computed.</summary>
+        /// <summary>Sign of the day-over-day change: -1, 0 or 1; 0 when the change cannot be computed. Not used for colour (single-cyan rule); kept for tests and as the sign of the change.</summary>
         public int Direction { get; }
 
         ChartHeaderView(string title, string price, string change, string status, int direction)
@@ -195,6 +195,7 @@ namespace SpatialTrading.Components
         public string Name { get; }
         public string PriceText { get; }
         public string ChangeText { get; }
+        /// <summary>Sign of the change. Not used for colour (single-cyan rule); kept for tests and as the sign of the change.</summary>
         public int Direction { get; }
         public string Status { get; }
         public IReadOnlyList<decimal> Spark { get; }

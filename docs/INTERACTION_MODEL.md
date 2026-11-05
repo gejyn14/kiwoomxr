@@ -33,16 +33,16 @@ Quest 3 eye tracking is not an input capability. “Selected visual context” m
 | --- | --- | --- |
 | Move | Grab the top bar or body; on release the panel snaps to the grid in 0.12 s | Mouse drag |
 | Resize | Grab the corner handle (bottom-right, cyan; amber on the order panel; 55 mm grab area); size changes in whole grid cells and snaps on release. The chart's detail follows its size (line, candles, candles with axes) | Mouse drag on the handle |
-| Dismiss | Press the × at the right end of the panel's top bar, or flick the panel (about 1.2 m/s over 0.15 m); both take the same path: it flies off and fades with a short whoosh | Fast mouse drag (the × is a canvas button) |
+| Dismiss | Press the × at the right end of the panel's top bar, or flick the panel (about 1.2 m/s over 0.15 m); both take the same path: it flies off and fades with a short whoosh | Click the × (the mouse hit-tests it), or a fast mouse drag |
 | Restore | Press the panel's icon in the always-visible dock (a thin bar under the top row's left end) | Click the icon (dock buttons have colliders) |
 | Reset | 기본 배치로 at the end of the dock | `R`, or click it in the dock |
 | Select instrument | Poke or ray on a 관심종목 row; the big chart, 호가 and 주문 follow | `1`-`4` select 키움증권, 삼성전자, SK하이닉스, 코스피; click a row |
 
-Every control has a 55 mm target (checked by the Validate step), a cyan hover glow and press feedback, and a short tick sound on a successful press. The palm tray is off by default so a palm-up gesture cannot collide with the Quest system menu; its code remains as a dev aid (`T`, or controller Y, pins the tray ahead of the head) and palm detection can be switched on in the component. Without an XR device the workspace follows the camera until it has held still for 10 frames or a drag starts, then pins once. After a Quest system recenter the existing tracking-origin listener places the spread in front of the headset again.
+Every control has a target of at least 55 mm on the eye plane and dock, and at least 32 canvas mm (about 22 mm physical, Meta's poke minimum) on the 0.7x hand plane; the Validate step checks both, a cyan hover glow and press feedback, and a short tick sound on a successful press. The palm tray is off by default so a palm-up gesture cannot collide with the Quest system menu; its code remains as a dev aid (`T`, or controller Y, pins the tray ahead of the head) and palm detection can be switched on in the component. Without an XR device the workspace follows the camera until it has held still for 10 frames or a drag starts, then pins once. After a Quest system recenter the existing tracking-origin listener places the spread in front of the headset again.
 
 Editor keys: `R` reset layout, `1`-`4` select 관심종목 rows, `T` (and the controller Y button) pins the palm tray as a dev aid, even though palm detection is off by default.
 
-The mouse backup can press the dock's buttons and select 관심종목 rows (they have colliders), but it still cannot press the other canvas buttons: 1D / 4H, the 유형 order type buttons, 매수 준비, 확인 and the panels' × close. In an editor without the simulator those need the simulator's controller ray or a headset.
+The mouse backup can press the dock's buttons and select 관심종목 rows (they have colliders), but it still cannot press the other canvas buttons: 1D / 4H, the 유형 order type buttons, 매수 준비 and 확인. In an editor without the simulator those need the simulator's controller ray or a headset.
 
 ### Manual headset checks (not provable from the editor)
 

@@ -408,6 +408,29 @@ namespace SpatialTrading.Tests
         }
 
         [Test]
+        public void HeaderReferenceSignWinsOverCloseMinusPreviousClose()
+        {
+            // close 225,000 is below the previous close 226,000 ("-1,000"), but above the broker reference 224,000.
+            var daily = Daily("005930", new[]
+            {
+                new Candle("20261027", 224000m, 227000m, 223000m, 226000m, 1, true),
+                new Candle("20261028", 226000m, 227000m, 224000m, 225000m, 1, true, 224000m),
+            });
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, daily, null, "1D", "KRX", null);
+            Assert.That(h.ChangeText, Is.EqualTo("+1,000 (+0.45%)"));
+            Assert.That(h.Direction, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void HeaderSingleCandleWithReferenceShowsChange()
+        {
+            var one = Daily("005930", new[] { new Candle("20261028", 224000m, 226000m, 223000m, 225000m, 1, true, 224000m) });
+            var h = ChartHeaderView.From(TraderCatalog.Samsung, one, null, "1D", "KRX", null);
+            Assert.That(h.ChangeText, Is.EqualTo("+1,000 (+0.45%)"));
+            Assert.That(h.Direction, Is.EqualTo(1));
+        }
+
+        [Test]
         public void HeaderDirectionIsZeroWhenChangeUnknown()
         {
             var one = Daily("005930", new[] { new Candle("20261028", 224000m, 226000m, 223000m, 225000m, 1, true) });
