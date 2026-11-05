@@ -27,32 +27,40 @@ Quest 3 eye tracking is not an input capability. “Selected visual context” m
 
 ## Trader spread workspace (current scene)
 
-`TraderSpread` replaces the Focus picker. Eight flat panels (three stock charts, KOSPI chart, order book, news, balance, order) sit on a grid in two planes: an eye plane about 1.10 m ahead and a lower hand plane about 0.60 m ahead. Panels never pitch or roll; only yaw follows the user. Gestures change presentation only and never touch order state, except that dismissing the order panel cancels a prepared ticket.
+`TraderSpread` replaces the Focus picker. Six flat panels sit on a grid in two planes within about ±30° of straight ahead: 관심종목 (watchlist: 키움증권, 삼성전자, SK하이닉스, 코스피, each with price, 전일대비, a status label and a 20-day mini chart), one big chart for the selected instrument (1D / 4H), 잔고, 호가 and 뉴스 on the eye plane about 1.10 m ahead, and 주문 on a hand plane about 0.45 m ahead at 0.7× scale (the order panel is poked with a finger; the eye plane is read and ray-pointed). Panels never pitch or roll; only yaw follows the user. Gestures change presentation only and never touch order state, except that dismissing the order panel cancels a prepared ticket. The order panel's controls are the 유형 (order type) buttons, 매수 준비 and 확인; 확인 sends nothing, 매도 stays locked, and there is no 취소 button. Layout numbers are in the [comfort design](superpowers/specs/2026-11-05-spread-comfort-design.md).
 
 | Intent | Hand / controller | Editor backup |
 | --- | --- | --- |
 | Move | Grab the top bar or body; on release the panel snaps to the grid in 0.12 s | Mouse drag |
-| Resize | Grab the corner handle (bottom-right, cyan; amber on the order panel); size changes in whole grid cells and snaps on release. A chart's detail follows its size (line, candles, candles with axes) | Mouse drag on the handle |
-| Dismiss | Flick the panel (about 1.2 m/s over 0.15 m); it flies off and fades with a short whoosh | Fast mouse drag |
-| Restore | Palm up for 0.4 s shows the tray; pull an icon out 0.1 m to restore that panel. The tray hides after 0.6 s without the palm | `T`, or controller Y button, pins the tray ahead of the head |
-| Reset | "기본 배치로" at the end of the tray restores the default layout | `R` |
-| Select chart | Poke or ray on a chart; the book and order panels follow the selection | `1`-`4` select the charts; click |
+| Resize | Grab the corner handle (bottom-right, cyan; amber on the order panel; 55 mm grab area); size changes in whole grid cells and snaps on release. The chart's detail follows its size (line, candles, candles with axes) | Mouse drag on the handle |
+| Dismiss | Press the × at the right end of the panel's top bar, or flick the panel (about 1.2 m/s over 0.15 m); both take the same path: it flies off and fades with a short whoosh | Fast mouse drag (the × is a canvas button) |
+| Restore | Press the panel's icon in the always-visible dock (a thin bar under the top row's left end) | Click the icon (dock buttons have colliders) |
+| Reset | 기본 배치로 at the end of the dock | `R`, or click it in the dock |
+| Select instrument | Poke or ray on a 관심종목 row; the big chart, 호가 and 주문 follow | `1`-`4` select 키움증권, 삼성전자, SK하이닉스, 코스피; click a row |
 
-Editor keys: `T` tray, `R` reset layout, `1`-`4` select chart. Without an XR device the workspace follows the camera until it has held still for 10 frames or a drag starts, then pins once.
+Every control has a 55 mm target (checked by the Validate step), a cyan hover glow and press feedback, and a short tick sound on a successful press. The palm tray is off by default so a palm-up gesture cannot collide with the Quest system menu; its code remains as a dev aid (`T`, or controller Y, pins the tray ahead of the head) and palm detection can be switched on in the component. Without an XR device the workspace follows the camera until it has held still for 10 frames or a drag starts, then pins once. After a Quest system recenter the existing tracking-origin listener places the spread in front of the headset again.
 
-The mouse backup cannot press canvas buttons (4H/1D, the order type buttons, 매수 준비 / 확인 / 취소, and the tray's 기본 배치로 button). In an editor without the simulator those need the simulator's controller ray or a headset; `R` and the tray's reset collider still reset the layout.
+Editor keys: `R` reset layout, `1`-`4` select 관심종목 rows, `T` pins the palm tray (only meaningful when the tray is enabled).
+
+The mouse backup can press the dock's buttons and select 관심종목 rows (they have colliders), but it still cannot press the other canvas buttons: 1D / 4H, the 유형 order type buttons, 매수 준비, 확인 and the panels' × close. In an editor without the simulator those need the simulator's controller ray or a headset.
 
 ### Manual headset checks (not provable from the editor)
 
+The spec's headset list ([comfort design §5](superpowers/specs/2026-11-05-spread-comfort-design.md)):
+
+- Seated, press the 0.45 m order panel with a finger: is the arm comfortable?
+- Over a bright presentation-room passthrough: is the text readable?
+- Move panels quickly: is any panel thrown away by accident?
+- After a system recenter (long press of the Meta button): does the spread return in front of you?
+
+Also on the headset:
+
 - Grab a panel's top bar or body, move it and release: it snaps in about 0.12 s and stays flat.
-- Flick-throw a panel: it flies off, fades and whooshes. Throw the order panel during a preview: the preview is cancelled.
+- Flick-throw a panel, and press its ×: both fly off, fade and whoosh. Close the order panel during a preview: the preview is cancelled.
 - Drag the corner handle: the size changes in whole cells and snaps on release.
-- Palm up for 0.4 s shows the tray; pulling an icon out 0.1 m restores its panel; looking away for 0.6 s hides the tray.
-- Controller Y toggles the tray; 기본 배치로 resets the layout.
-- Poke and ray work on 4H/1D, the order type buttons, 매수 준비 / 확인 / 취소, and chart tap-to-select.
-- Recenter at a real seated or standing height.
+- The dock stays visible; pressing an icon restores that panel; 기본 배치로 resets the layout. The palm-up gesture does nothing by default.
+- Poke and ray work on 1D / 4H, the 유형 buttons, 매수 준비, 확인 and 관심종목 row selection; the tick sounds on each press.
 - During market hours: LIVE labels and book depth.
-- Editor without the simulator: canvas buttons need the simulator's controller ray or a headset (the mouse fallback cannot press them).
 
 ## Focus Mode (historical, retired)
 

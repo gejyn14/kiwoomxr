@@ -144,6 +144,9 @@ These steps need a working Unity license and a valid Kiwoom key (Editor check) o
 
 - Use the Mac's hotspot IP in **both** `GATEWAY_ALLOWED_HOSTS` (restart the gateway) and the headset's `gateway.json` `url`. A wrong Host shows up in the gateway log as `rejected Host: '<ip>'`.
 - Check the talk time against the 20:00 KST NXT close. After 20:00 (and before 08:00) there are no live ticks: the panels show the last NXT values as 장 마감, not 실시간.
+- Check the dock before going on stage: it sits under the left end of the top row and always shows. Dismiss a panel, confirm its icon appears in the dock, press the icon to bring it back, and try 기본 배치로. The palm tray is off by default; do not rely on a palm-up gesture.
+- Press the x on a panel to confirm it closes like a flick (closing 주문 cancels a prepared preview). After a system recenter (long press of the Meta button) the spread should return in front of you.
+- Known open item, during market hours: confirm whether Kiwoom's plain-code daily chart (ka10081 with `005930`) is KRX or 통합. Fetch it with the plain code and with `005930_AL`, and compare both with the KRX official close. Only if the plain-code series is 통합, relabel the chart's "KRX" to "통합". Until then the label stays "KRX"; the 전일대비 now uses the broker's reference price (`reference`), not the difference of two closes. kiwoom-cli and the gateway share one app key, so stop the gateway (or run kiwoom-cli first) so that token reissue does not cut either one off.
 - Turn the team-03 app off during rehearsal and the talk; it shares the Kiwoom key, and a competing session can invalidate the token.
 
 ## Input and layout

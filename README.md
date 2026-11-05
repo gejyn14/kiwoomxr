@@ -23,11 +23,11 @@ A staged mixed-reality trading prototype. Interfaces produce typed actions; comp
 
 ## Trader spread scene
 
-The Unity scene is `TraderSpread` (the only build scene; the old FocusShell picker is retired). It lays out eight flat, front-facing panels: three stock charts, a KOSPI chart, an order book, news, balance and an order panel. Panels can be grabbed, moved on a grid, resized from a corner handle and flicked away; see the [interaction model](docs/INTERACTION_MODEL.md). The order panel only prepares and previews a ticket: nothing is sent and `/v1/orders` still returns 404. Generate the scene with the Unity menu **Spatial Trading → 2. Generate Trader Spread scene** (or `scripts/unity.sh scene`).
+The Unity scene is `TraderSpread` (the only build scene; the old FocusShell picker is retired). It lays out six flat, front-facing panels within about +-30 degrees: a 관심종목 watchlist (키움증권, 삼성전자, SK하이닉스, 코스피, each with price, 전일대비 and a mini chart), one big chart for the selected instrument, 잔고, an order book and news on a 1.10 m eye plane, and the order panel on a 0.45 m hand plane at 0.7x. Panels can be grabbed, moved on a grid, resized from a corner handle, and closed with a x button or a flick; an always-visible dock brings them back. See the [interaction model](docs/INTERACTION_MODEL.md) and the [comfort design](docs/superpowers/specs/2026-11-05-spread-comfort-design.md). The order panel only prepares and previews a ticket: nothing is sent and `/v1/orders` still returns 404. Generate the scene with the Unity menu **Spatial Trading → 2. Generate Trader Spread scene** (or `scripts/unity.sh scene`).
 
 ![Trader spread in the Unity editor (Play mode), live gateway data](docs/images/trader-spread-live.png)
 
-The image is an automated Unity editor Play-mode capture (no XR runtime, camera rendered to PNG) from the live gateway stream while the market was closed, so panels show 장 마감 and empty book levels. The account line is redacted in the image. It is neither a Meta XR Simulator nor a Quest 3 capture.
+The image is an automated Unity editor Play-mode capture (no XR runtime, camera rendered to PNG, `SpreadCapture` in `quest/Assets/SpatialTrading/Editor`) from the live gateway stream, taken on 2026-11-05 after the market closed, so panels show 장 마감 / DELAYED and the order book may be empty. The balance panel's account text is replaced by "계좌 ••••" in this image (`SPATIAL_CAPTURE_REDACT=1`). It is neither a Meta XR Simulator nor a Quest 3 capture, and the headset comfort checks in the [interaction model](docs/INTERACTION_MODEL.md) have not been done.
 
 ## Run the gateway
 

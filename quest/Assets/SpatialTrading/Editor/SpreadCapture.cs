@@ -18,10 +18,11 @@ namespace SpatialTrading.Editor
     /// (not -batchmode, so cameras render) with <c>-executeMethod SpatialTrading.Editor.SpreadCapture.Run</c> and the
     /// gateway pairing token in the <c>SPATIAL_PAIRING_TOKEN</c> environment variable. It opens TraderSpread.unity, enters
     /// Play mode, waits for the gateway's data, drives states (a)–(g) through the <see cref="SpreadWorkspace"/> API, renders
-    /// each to a 1920×1080 PNG in artifacts/trader-spread/ and exits. The token stays in the process environment, which
+    /// each to a 1920×1080 PNG in artifacts/trader-spread-comfort/ and exits. The token stays in the process environment, which
     /// <see cref="MarketDataSession"/> reads ahead of EditorPrefs in the editor: it is never logged and never written to
     /// EditorPrefs or any file, so a killed or hung editor leaves nothing behind. Hand gestures (flick, palm tray, corner
-    /// drag) are not exercised here.
+    /// drag) are not exercised here. With <c>SPATIAL_CAPTURE_REDACT=1</c> the balance panel's account text is replaced by
+    /// "계좌 ••••" before every render; the image committed to docs must come from that mode.
     /// </summary>
     [InitializeOnLoad]
     public static class SpreadCapture
@@ -45,7 +46,10 @@ namespace SpatialTrading.Editor
         /// <summary>Stand-in for passthrough: a dark room tone so the translucent panels read.</summary>
         public static readonly Color Backdrop = new Color(0.035f, 0.045f, 0.058f, 1f);
 
-        private static string OutputDirectory => Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/trader-spread"));
+        private static string OutputDirectory => Path.GetFullPath(Path.Combine(Application.dataPath, "../../artifacts/trader-spread-comfort"));
+        public const string RedactVariable = "SPATIAL_CAPTURE_REDACT";
+        public const string RedactedAccountText = "계좌 ••••";
+        private static bool Redact => Environment.GetEnvironmentVariable(RedactVariable) == "1";
 
         private static double _stageAt;
         private static bool _resumed;
@@ -124,7 +128,6 @@ namespace SpatialTrading.Editor
             {
                 var workspace = Object.FindFirstObjectByType<SpreadWorkspace>();
                 if (workspace == null || workspace.Market == null) return;
-                var tray = Object.FindFirstObjectByType<PalmTray>();
                 var elapsed = now - _stageAt;
                 switch (_stage)
                 {
@@ -158,10 +161,10 @@ namespace SpatialTrading.Editor
                     case 7: if (elapsed > 1) { Capture(workspace, "d-chart-large", "잔고를 치우고 삼성전자 차트를 8×10칸으로: 봉+거래량+가격·시간축"); Next(); } break;
                     case 8: if (elapsed > 0) { workspace.Reset(); workspace.Dismiss(PanelId.News); Next(); } break;
                     case 9: if (elapsed > 0.15) { Capture(workspace, "e0-news-flying", "뉴스 치우는 중 (0.15 s: 날아가며 흐려짐)"); Next(); } break;
-                    case 10: if (elapsed > 0.6) { if (tray != null) tray.Pin(); Next(); } break;
-                    case 11: if (elapsed > 0.5) { Capture(workspace, "e-news-dismissed", "뉴스 치운 직후, 트레이(T)에 뉴스 아이콘"); Next(); } break;
+                    case 10: if (elapsed > 0.6) { Next(); } break;
+                    case 11: if (elapsed > 0.5) { Capture(workspace, "e-news-dismissed", "뉴스 치운 직후, 독에 뉴스 아이콘"); Next(); } break;
                     case 12: if (elapsed > 0) { workspace.Restore(PanelId.News); Next(); } break;
-                    case 13: if (elapsed > 0.8) { Capture(workspace, "f-news-restored", "트레이에서 뉴스 되살림"); Next(); } break;
+                    case 13: if (elapsed > 0.8) { Capture(workspace, "f-news-restored", "독에서 뉴스 되살림"); Next(); } break;
                     case 14: if (elapsed > 0) { workspace.Reset(); Next(); } break;
                     case 15: if (elapsed > 1) { Capture(workspace, "g-reset", "R 리셋 후 기본 배치"); Next(); } break;
                     default:
@@ -188,6 +191,7 @@ namespace SpatialTrading.Editor
         private static void Capture(SpreadWorkspace workspace, string name, string note)
         {
             Canvas.ForceUpdateCanvases();
+            if (Redact) RedactAccount(workspace);
             var go = new GameObject("Capture eye");
             var camera = go.AddComponent<Camera>();
             var texture = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { antiAliasing = 8 };
@@ -224,6 +228,22 @@ namespace SpatialTrading.Editor
                 Object.DestroyImmediate(image);
             }
             Shots.Add(Describe(workspace, name + ".png", note));
+        }
+
+        /// <summary>Replaces the balance panel's account text just before a render; the next panel render restores it.</summary>
+        private static void RedactAccount(SpreadWorkspace workspace)
+        {
+            foreach (var panel in workspace.Panels)
+            {
+                if (panel.Id != PanelId.Balance) continue;
+                foreach (var text in panel.GetComponentsInChildren<TMP_Text>(true))
+                {
+                    if (text.name != "Account") continue;
+                    text.text = RedactedAccountText;
+                    text.ForceMeshUpdate();
+                }
+            }
+            Canvas.ForceUpdateCanvases();
         }
 
         // Honesty labels and headers only; the account line is never read.
