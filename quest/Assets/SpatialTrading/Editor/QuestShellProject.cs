@@ -639,8 +639,8 @@ namespace SpatialTrading.Editor
         /// panel), then each panel's content is copied into a scratch preview scene (the saved scene is never touched) and
         /// laid out at its default, smallest and largest size with synthetic views (the order panel idle and in preflight),
         /// because most buttons are placed, and watchlist rows created, only on render. Every active Button there is at
-        /// least 55 canvas mm a side on the eye plane, 32 on the hand plane (drawn at 0.7×), and none reaches into the resize
-        /// handle's inner 27.5 mm square at the bottom-right corner.
+        /// least 55 canvas mm a side on the eye plane, 32 on the hand plane (drawn at 0.7×), none reaches into the resize
+        /// handle's inner 27.5 mm square at the bottom-right corner, and none overlaps the top-centre ray-grab strip.
         /// </summary>
         private static void ValidateTargets(SpreadPanel[] panels)
         {
@@ -669,6 +669,13 @@ namespace SpatialTrading.Editor
                 var corner = new Vector3(size.x * .5f, -size.y * .5f);
                 if (Vector2.Distance(panel.Handle.localPosition, corner) > 1e-5f)
                     throw new BuildFailedException(panel.name + " resize handle is not on the bottom-right corner.");
+                var strip = panel.GetComponentsInChildren<BoxCollider>(true).FirstOrDefault(c => c.name == "Grab bar");
+                var stripDepth = (HoloStyle.GrabStripDepthMm + HoloStyle.GrabStripOverhangMm) * .001f;
+                if (strip == null || Mathf.Abs(strip.size.x - HoloStyle.GrabStripWidthMm(size.x * 1000f) * .001f) > 1e-5f ||
+                    Mathf.Abs(strip.size.y - stripDepth) > 1e-5f ||
+                    Mathf.Abs(strip.center.y - (size.y * .5f + HoloStyle.GrabStripOverhangMm * .001f - stripDepth * .5f)) > 1e-5f ||
+                    Mathf.Abs(strip.center.x) > 1e-5f)
+                    throw new BuildFailedException(panel.name + " ray-grab strip does not match its HoloStyle footprint.");
             }
 
             var scratch = EditorSceneManager.NewPreviewScene();
@@ -758,13 +765,19 @@ namespace SpatialTrading.Editor
                     throw new BuildFailedException(where + ": button " + b.name + " is " + r.rect.width.ToString("0.#") + " × " +
                         r.rect.height.ToString("0.#") + ", under " + minimum + " mm.");
                 r.GetWorldCorners(corners);
-                float right = float.MinValue, bottom = float.MaxValue;
+                float left = float.MaxValue, right = float.MinValue, bottom = float.MaxValue, top = float.MinValue;
                 foreach (var c in corners)
                 {
                     var local = root.InverseTransformPoint(c);
+                    left = Mathf.Min(left, local.x - bounds.xMin);
                     right = Mathf.Max(right, local.x - bounds.xMin);
                     bottom = Mathf.Min(bottom, local.y - bounds.yMin); // from the panel's bottom edge
+                    top = Mathf.Max(top, local.y - bounds.yMin);
                 }
+                var stripW = HoloStyle.GrabStripWidthMm(size.x);
+                if (left < (size.x + stripW) / 2f - 1e-3f && right > (size.x - stripW) / 2f + 1e-3f &&
+                    top > size.y - HoloStyle.GrabStripDepthMm + 1e-3f)
+                    throw new BuildFailedException(where + ": button " + b.name + " overlaps the ray-grab strip.");
                 if (right > size.x - HoloStyle.HandleClearMm + 1e-3f && bottom < HoloStyle.HandleClearMm - 1e-3f)
                     throw new BuildFailedException(where + ": button " + b.name + " reaches into the resize handle's corner square.");
             }

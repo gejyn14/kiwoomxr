@@ -34,6 +34,13 @@ namespace SpatialTrading.Components
         /// <summary>Half the resize handle's 55 mm grab square, which is centred on the panel's bottom-right corner: no
         /// button may reach into this many millimetres of the corner, in both directions.</summary>
         public const float HandleClearMm = 27.5f;
+        /// <summary>The ray-grab strip on a panel's top edge reaches this far down into the panel (it starts 8 mm above
+        /// the edge); no button may overlap its footprint.</summary>
+        public const float GrabStripDepthMm = 20f;
+        public const float GrabStripOverhangMm = 8f;
+
+        /// <summary>Width of the centred ray-grab strip for a panel <paramref name="panelWidthMm"/> wide.</summary>
+        public static float GrabStripWidthMm(float panelWidthMm) => Mathf.Min(panelWidthMm * .3f, 140f);
 
         /// <summary>Millimetres per grid cell (canvas units).</summary>
         public const float CellMm = SpreadLayout.CellMeters * 1000f;

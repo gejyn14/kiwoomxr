@@ -106,8 +106,10 @@ namespace SpatialTrading.Spread
             if (_grabBar != null)
             {
                 // A short strip on the top edge, in front of the canvas: the ray-grab target.
-                _grabBar.size = new Vector3(Mathf.Min(w * .3f, .14f), .028f, .012f);
-                _grabBar.center = new Vector3(0f, h * .5f - .006f, -.006f);
+                // Buttons stay out of its footprint (HoloStyle.GrabStrip*), so a ray never grabs where it means to press.
+                var depth = (HoloStyle.GrabStripDepthMm + HoloStyle.GrabStripOverhangMm) * .001f;
+                _grabBar.size = new Vector3(HoloStyle.GrabStripWidthMm(size.x) * .001f, depth, .012f);
+                _grabBar.center = new Vector3(0f, h * .5f + HoloStyle.GrabStripOverhangMm * .001f - depth * .5f, -.006f);
             }
             if (_handle != null && !_resizing) ResetHandle();
         }

@@ -78,18 +78,21 @@ namespace SpatialTrading.Components
             var size = Size(rect);
             float w = size.x, h = size.y;
 
-            // Header band (y 3..58): name [· price · change when compact and it fits] …… [4H][1D] [×]. The toggles line up
-            // with the close button; whatever does not fit beside them moves under the band.
+            // Header band: name [· price · change when compact and it fits] …… [4H][1D] [×]. The toggles line up with the
+            // close button, or drop just under the centred ray-grab strip when they would reach into it (a ray must never
+            // grab where it means to press); whatever does not fit beside them moves under the band.
             var togglesX = Mathf.Max(8f, w - CloseReserveMm - CloseGap - 2 * ToggleW - ToggleGap);
-            Holo.Place(_fourHour, togglesX, CloseInset, ToggleW, ToggleH);
-            Holo.Place(_daily, togglesX + ToggleW + ToggleGap, CloseInset, ToggleW, ToggleH);
+            var stripRight = (w + HoloStyle.GrabStripWidthMm(w)) / 2f;
+            var togglesY = togglesX < stripRight ? HoloStyle.GrabStripDepthMm + 2f : CloseInset;
+            Holo.Place(_fourHour, togglesX, togglesY, ToggleW, ToggleH);
+            Holo.Place(_daily, togglesX + ToggleW + ToggleGap, togglesY, ToggleW, ToggleH);
             StyleToggle(_fourHour, _fourHourLabel, interval == FourHour);
             StyleToggle(_daily, _dailyLabel, interval == Daily);
             var bandW = togglesX - 8f - Pad; // free header width left of the toggles
             _title.text = view.Title;
             _price.text = view.PriceText;
             _change.text = view.ChangeText;
-            var y = CloseBottom + 2f;
+            var y = Mathf.Max(CloseBottom, togglesY + ToggleH) + 2f;
             if (rect.Height <= 4)
             {
                 // Compact: one row of name, price and change (the name gives way first), in the band when the price and
