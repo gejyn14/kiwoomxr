@@ -390,7 +390,7 @@ namespace SpatialTrading.Tests
             });
             var nxt = Live(new QuoteSnapshot("005930", 201500m, -16500m, -7.57m, 100));
             var h = ChartHeaderView.From(TraderCatalog.Samsung, daily, nxt, "1D", "KRX", "NXT");
-            Assert.That(h.ChangeText, Is.EqualTo(ViewFormat.Change(-16500m, -7.57m)));
+            Assert.That(h.ChangeText, Is.EqualTo("−16,500 (−7.57%)"));
             Assert.That(h.Direction, Is.EqualTo(-1));
         }
 
@@ -412,7 +412,7 @@ namespace SpatialTrading.Tests
         {
             var one = Daily("005930", new[] { new Candle("20261028", 224000m, 226000m, 223000m, 225000m, 1, true) });
             var h = ChartHeaderView.From(TraderCatalog.Samsung, one, null, "1D", "KRX", null);
-            Assert.That(h.ChangeText, Is.EqualTo(ViewFormat.None));
+            Assert.That(h.ChangeText, Is.EqualTo("—"));
             Assert.That(h.Direction, Is.EqualTo(0));
             var none = ChartHeaderView.From(TraderCatalog.Samsung, null, null, "1D", "KRX", null);
             Assert.That(none.Direction, Is.EqualTo(0));
@@ -443,8 +443,8 @@ namespace SpatialTrading.Tests
         public void WatchlistRowWithoutDataShowsDashAndStatus()
         {
             var rows = Rows(c => null, c => null, TraderCatalog.Samsung);
-            Assert.That(rows[0].PriceText, Is.EqualTo(ViewFormat.None));
-            Assert.That(rows[0].ChangeText, Is.EqualTo(ViewFormat.None));
+            Assert.That(rows[0].PriceText, Is.EqualTo("—"));
+            Assert.That(rows[0].ChangeText, Is.EqualTo("—"));
             Assert.That(rows[0].Direction, Is.EqualTo(0));
             Assert.That(rows[0].Status, Does.Contain("UNAVAILABLE"));
             Assert.That(rows[0].Spark, Is.Empty);
