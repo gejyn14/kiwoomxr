@@ -55,17 +55,32 @@ namespace SpatialTrading.Components
             var size = Size(rect);
             float w = size.x, h = size.y, inner = w - 2 * Pad;
 
-            // Header: 잔고 · account …… status
+            // Header: 잔고 · account …… status [×]. The status keeps its full width first; an account that no longer fits
+            // beside it takes a second header line.
             _title.text = "잔고";
             var titleW = Holo.Width(_title, _title.text) + 4f;
             Holo.Place(_title, Pad, Top, titleW, HeaderH);
+            var headerRight = w - CloseReserveMm;
+            var beside = headerRight - (Pad + titleW + 12f);
             _status.text = view.Status;
-            var statusW = Mathf.Min(Holo.Width(_status, view.Status) + 4f, inner * .45f);
-            Holo.Place(_status, w - Pad - statusW, Top, statusW, HeaderH);
-            Holo.Place(_account, Pad + titleW + 12f, Top, inner - titleW - statusW - 24f, HeaderH);
+            var statusW = Mathf.Min(Holo.Width(_status, view.Status) + 4f, beside);
+            Holo.Place(_status, headerRight - statusW, Top, statusW, HeaderH);
             _account.text = view.AccountText;
-            Rule(w, Top + HeaderH + 3f);
-            var y = Top + HeaderH + 10f;
+            var accountRoom = beside - statusW - 12f;
+            var y = BodyTop;
+            if (Holo.Width(_account, view.AccountText) + 4f <= accountRoom)
+            {
+                Holo.Place(_account, Pad + titleW + 12f, Top, accountRoom, HeaderH);
+                Rule(w, Top + HeaderH + 3f);
+            }
+            else
+            {
+                var lineY = Top + HeaderH - 2f;
+                var lineH = Holo.LineHeight(HoloStyle.MinText);
+                Holo.Place(_account, Pad, lineY, headerRight - Pad, lineH);
+                Rule(w, lineY + lineH + 1f);
+                y = Mathf.Max(BodyTop, lineY + lineH + 3f);
+            }
             var bottom = h - Top;
 
             Holo.Show(_ring, view.IsEmpty);

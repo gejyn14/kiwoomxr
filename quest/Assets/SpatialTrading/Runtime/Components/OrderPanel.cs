@@ -97,7 +97,7 @@ namespace SpatialTrading.Components
             _qty = Holo.Text(transform, "Qty", Font, HoloStyle.MinNumber, HoloStyle.Ink);
             _qtyLock = Holo.LockIcon(transform, "Qty Lock", HoloStyle.Amber);
 
-            _prepare = Holo.Button(transform, "Prepare");
+            _prepare = Holo.Button(transform, "Prepare", HoloStyle.Amber);
             _prepareText = Chip((SpatialCardGraphic)_prepare.targetGraphic, "PrepareText", HoloStyle.Amber, 20f);
             _prepareText.text = "매수 준비";
             BuildReason();
@@ -112,7 +112,7 @@ namespace SpatialTrading.Components
             _cardLine = Holo.Text(_card.transform, "Preview Fields", Font, 18f, HoloStyle.Ink);
             _cardPrice = Holo.Text(_card.transform, "PreviewPrice", Font, HoloStyle.MinNumber, HoloStyle.Ink);
             _cardQty = Holo.Text(_card.transform, "PreviewQty", Font, HoloStyle.MinNumber, HoloStyle.Ink);
-            _confirm = Holo.Button(_card.transform, "Confirm");
+            _confirm = Holo.Button(_card.transform, "Confirm", HoloStyle.Amber);
             _confirmText = Chip((SpatialCardGraphic)_confirm.targetGraphic, "ConfirmText", HoloStyle.Amber, 20f);
             _confirmText.text = "확인";
 
@@ -174,7 +174,7 @@ namespace SpatialTrading.Components
             var compact = _rect.Height < 6;
             var tiny = _rect.Height < 5;
 
-            // Header: 주문 [매수|매도🔒 when compact] …… badge
+            // Header: 주문 [매수|매도🔒 when compact] …… badge [×]
             var titleW = Holo.Width(_title, _title.text) + 4f;
             Holo.Place(_title, Pad, Top, titleW, HeaderH);
             _sellText.text = view.SellTabLabel;
@@ -189,10 +189,11 @@ namespace SpatialTrading.Components
                 headerRight += 8f + buyW + 4f + sellW;
             }
             _badgeText.text = view.Badge;
-            var badgeW = Mathf.Max(0f, Mathf.Min(Holo.Width(_badgeText, view.Badge) + 16f, w - Pad - headerRight - 8f));
-            Holo.Place(_badge, w - Pad - badgeW, Top + 2f, badgeW, HeaderH - 4f);
+            var badgeRight = w - CloseReserveMm;
+            var badgeW = Mathf.Max(0f, Mathf.Min(Holo.Width(_badgeText, view.Badge) + 16f, badgeRight - headerRight - 8f));
+            Holo.Place(_badge, badgeRight - badgeW, Top + 2f, badgeW, HeaderH - 4f);
             Rule(w, Top + HeaderH + 3f);
-            var y = Top + HeaderH + 10f;
+            var y = BodyTop;
 
             // Full tabs row: 매수 | 매도 (locked)
             if (!compact)
@@ -239,7 +240,8 @@ namespace SpatialTrading.Components
 
                 var actionH = compact ? ActionH - 4f : ActionH;
                 var actionY = Mathf.Min(y, h - Top - actionH);
-                Holo.Place(_prepare, Pad, actionY, inner, actionH);
+                // Full width, except that it stops short of the resize handle's grab square when it reaches down to it.
+                Holo.Place(_prepare, Pad, actionY, ClearOfHandle(w, h, Pad, actionY + actionH, inner), actionH);
                 StyleAction(_prepare, _prepareText, view.PrepareEnabled);
 
                 // Why 매수 준비 is off, always visible (not only as a toast) whenever there is room under the button.
@@ -258,7 +260,7 @@ namespace SpatialTrading.Components
             {
                 if (_reason != null) Holo.Show(_reason, false);
                 Holo.Show(_qtyLock, false);
-                DrawCard(inner, Mathf.Min(CardH, h - Top - y), y);
+                DrawCard(w, h, inner, Mathf.Min(CardH, h - Top - y), y);
             }
 
             if (_toast.gameObject.activeSelf) PlaceToast(w, h);
@@ -271,7 +273,15 @@ namespace SpatialTrading.Components
             _reason = Holo.Text(transform, "Reason", Font, ReasonSize, HoloStyle.Alpha(HoloStyle.Amber, .85f), TextAlignmentOptions.Center);
         }
 
-        private void DrawCard(float inner, float cardH, float y)
+        /// <summary>Width for a control at <paramref name="x"/> whose bottom edge is <paramref name="bottom"/> (panel mm) so
+        /// it stays out of the resize handle's inner square (<see cref="HoloStyle.HandleClearMm"/>, plus 2 mm).</summary>
+        private static float ClearOfHandle(float w, float h, float x, float bottom, float width)
+        {
+            if (bottom <= h - HoloStyle.HandleClearMm) return width;
+            return Mathf.Max(0f, Mathf.Min(width, w - HoloStyle.HandleClearMm - 2f - x));
+        }
+
+        private void DrawCard(float w, float h, float inner, float cardH, float y)
         {
             var p = _preview;
             Holo.Place(_card, Pad, y, inner, cardH);
@@ -302,7 +312,8 @@ namespace SpatialTrading.Components
             Holo.Place(_cardPrice, cp, line3Y, priceW, 40f);
             _cardPrice.text = "가격 " + ViewFormat.Number(p.Price);
             Holo.Place(_cardQty, cp + priceW + 10f, line3Y, qtyW, 40f);
-            Holo.Place(_confirm, inner - cp - confirmW, line3Y, confirmW, 40f);
+            var confirmX = inner - cp - confirmW;
+            Holo.Place(_confirm, confirmX, line3Y, ClearOfHandle(w, h, Pad + confirmX, y + line3Y + 40f, confirmW), 40f);
             StyleAction(_confirm, _confirmText, _view.PrepareEnabled);
         }
 

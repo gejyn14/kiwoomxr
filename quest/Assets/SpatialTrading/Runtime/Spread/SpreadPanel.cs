@@ -11,7 +11,8 @@ namespace SpatialTrading.Spread
     /// <summary>
     /// One per spread panel root. Follows its <see cref="Grabbable"/> while held, feeds the <see cref="FlickDetector"/>,
     /// and on release either raises <see cref="Dismissed"/> (a flick) or hands the drop point to the workspace, then
-    /// eases into the snapped grid position. The bottom-right corner handle (its own Grabbable) resizes in whole cells.
+    /// eases into the snapped grid position. The bottom-right corner handle (its own Grabbable) resizes in whole cells: its
+    /// transform and 55 mm grab square sit on the panel corner, the 34 mm triangle mark just inside it.
     /// Rotation is always the workspace's: yaw only, pitch and roll 0. Scale is the plane's
     /// (<see cref="SpreadLayout.ScaleFor"/>: eye 1, hand 0.7); the canvas keeps 50 mm cells in its own units.
     /// </summary>
@@ -23,8 +24,11 @@ namespace SpatialTrading.Spread
         public const float DismissDistance = 0.4f;
         public const float DismissScale = 0.6f;
         public const float AppearSeconds = 0.2f;
-        /// <summary>Corner handle square edge in metres; its centre sits half of this in from the panel corner.</summary>
-        public const float HandleSize = 0.034f;
+        /// <summary>Visible corner triangle's square, in metres (panel space), tucked inside the corner.</summary>
+        public const float HandleMarkSize = 0.034f;
+        /// <summary>The handle's grab collider edge in metres (panel space), centred on the panel corner: about 2.9° at
+        /// 1.10 m. Its inner quarter is <see cref="HoloStyle.HandleClearMm"/> square, which no button may reach into.</summary>
+        public const float HandleHitSize = 0.055f;
         private const float BodyDepth = 0.02f;
         /// <summary>A flying panel moves this far toward the viewer (−z) and draws above its neighbours.</summary>
         public const float FlyLift = 0.03f;
@@ -216,7 +220,7 @@ namespace SpatialTrading.Spread
         private void ResetHandle()
         {
             var size = HoloStyle.SizeFor(_rect) * 0.001f;
-            _handle.localPosition = new Vector3(size.x * .5f - HandleSize * .5f, -size.y * .5f + HandleSize * .5f, -.004f);
+            _handle.localPosition = new Vector3(size.x * .5f, -size.y * .5f, -.004f);
             _handle.localRotation = Quaternion.identity;
             _handle.localScale = Vector3.one;
         }
@@ -251,9 +255,9 @@ namespace SpatialTrading.Spread
                 _handle.rotation = _workspace.Rotation;
                 var d = Quaternion.Inverse(_workspace.Rotation) * (_handle.position - _resizeTopLeft);
                 var cell = SpreadLayout.CellMetersFor(_rect.Plane);
-                var half = HandleSize * .5f * _scale; // the handle shrinks with its panel
-                var want = new Vector2Int(Mathf.Max(1, Mathf.RoundToInt((d.x + half) / cell)),
-                                          Mathf.Max(1, Mathf.RoundToInt((-d.y + half) / cell)));
+                // The handle rides on the bottom-right corner, so its offset from the top-left is the wanted size.
+                var want = new Vector2Int(Mathf.Max(1, Mathf.RoundToInt(d.x / cell)),
+                                          Mathf.Max(1, Mathf.RoundToInt(-d.y / cell)));
                 if (want != _lastRequested)
                 {
                     _lastRequested = want;

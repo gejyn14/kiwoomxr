@@ -10,7 +10,8 @@ namespace SpatialTrading.Components
     /// <summary>
     /// News list: source tag and time on the left, the headline (up to two lines) on the right. Filing tags are amber.
     /// The number of rows follows the panel height; pass <see cref="RowsFor"/> as the max to <see cref="NewsView.Rank"/>.
-    /// The header carries <see cref="NewsView.Status"/> so an unavailable feed reads differently from an empty one.
+    /// The header carries <see cref="NewsView.Status"/> so an unavailable feed reads differently from an empty one; a label
+    /// too long for the room beside the title takes a second header line rather than being cut short.
     /// </summary>
     public sealed class NewsPanel : HoloPanel
     {
@@ -34,11 +35,13 @@ namespace SpatialTrading.Components
             public Image Separator;
         }
 
-        private static float BodyTop => Top + HeaderH + 10f;
+        private const float StatusLineH = 26f; // 16 mm line box
 
-        /// <summary>How many rows fit a panel of this size (at least 1).</summary>
-        public static int RowsFor(PanelRect rect) =>
-            Math.Max(1, Mathf.FloorToInt((HoloStyle.SizeFor(rect).y - BodyTop - Top) / Pitch));
+        /// <summary>How many rows fit a panel of this size (at least 1) when the status shares the title line; a
+        /// two-line header shows one fewer when the rows would not fit.</summary>
+        public static int RowsFor(PanelRect rect) => RowsBelow(HoloStyle.SizeFor(rect).y, BodyTop);
+
+        private static int RowsBelow(float height, float top) => Math.Max(1, Mathf.FloorToInt((height - top - Top) / Pitch));
 
         protected override void Build()
         {
@@ -57,12 +60,27 @@ namespace SpatialTrading.Components
             float w = size.x, h = size.y, inner = w - 2 * Pad;
             var titleW = Holo.Width(_title, _title.text) + 4f;
             Holo.Place(_title, Pad, Top, titleW, HeaderH);
-            Holo.Place(_status, Pad + titleW + 12f, Top, inner - titleW - 12f, HeaderH);
             _status.text = status ?? string.Empty;
-            Rule(w, Top + HeaderH + 3f);
-
+            var headerRight = w - CloseReserveMm;
+            var beside = headerRight - (Pad + titleW + 12f);
             var y = BodyTop;
-            var shown = Math.Min(rows?.Count ?? 0, RowsFor(rect));
+            if (Holo.Width(_status, _status.text) + 4f <= beside)
+            {
+                _status.alignment = TextAlignmentOptions.MidlineRight;
+                Holo.Place(_status, Pad + titleW + 12f, Top, beside, HeaderH);
+                Rule(w, Top + HeaderH + 3f);
+            }
+            else
+            {
+                // Second header line, left of the close button.
+                _status.alignment = TextAlignmentOptions.MidlineLeft;
+                var lineY = Top + HeaderH - 2f;
+                Holo.Place(_status, Pad, lineY, headerRight - Pad, StatusLineH);
+                Rule(w, lineY + StatusLineH + 1f);
+                y = Mathf.Max(BodyTop, lineY + StatusLineH + 8f);
+            }
+
+            var shown = Math.Min(rows?.Count ?? 0, RowsBelow(h, y));
             Holo.Show(_empty, shown == 0);
             if (shown == 0)
             {

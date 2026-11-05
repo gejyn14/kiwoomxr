@@ -92,16 +92,7 @@ namespace SpatialTrading.Spread
 
         private void Awake()
         {
-            if (_reset != null)
-            {
-                var last = -1;
-                _reset.onClick.AddListener(() =>
-                {
-                    if (last == Time.frameCount) return;
-                    last = Time.frameCount;
-                    if (_workspace != null) _workspace.Reset();
-                });
-            }
+            if (_reset != null) Holo.OnClick(_reset, () => { if (_workspace != null) _workspace.Reset(); });
             for (var i = 0; i < _icons.Length; i++)
             {
                 var index = i;

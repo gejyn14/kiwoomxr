@@ -64,20 +64,21 @@ namespace SpatialTrading.Components
             float w = size.x, h = size.y, inner = w - 2 * Pad;
 
             // Compact header so ten levels a side keep a ≥ 22 mm pitch at 9×11: title, then status with the hint on
-            // the same line, then the rule.
+            // the same line, then the rule. Both header lines end left of the close button (they sit beside it).
+            var header = w - CloseReserveMm - Pad;
             var y = BookTop;
-            Holo.Place(_title, Pad, y, inner, TitleRowH);
+            Holo.Place(_title, Pad, y, header, TitleRowH);
             _title.text = view.Title;
             y += TitleRowH;
             _status.text = view.Status;
             var hasHint = !string.IsNullOrEmpty(view.Hint);
             var hint = hasHint ? view.Hint.Replace('\n', ' ') : string.Empty;
-            var statusW = hasHint ? Mathf.Min(Holo.Width(_status, view.Status) + 4f, inner * .6f) : inner;
+            var statusW = hasHint ? Mathf.Min(Holo.Width(_status, view.Status) + 4f, header * .6f) : header;
             Holo.Show(_hint, hasHint);
-            if (hasHint && Holo.Width(_hint, hint) + 4f > inner - statusW - 12f)
+            if (hasHint && Holo.Width(_hint, hint) + 4f > header - statusW - 12f)
             {
-                // The hint does not fit beside the status: give it its own line rather than cut it off.
-                Holo.Place(_status, Pad, y, inner, StatusRowH);
+                // The hint does not fit beside the status: give it its own line (under the close button) rather than cut it off.
+                Holo.Place(_status, Pad, y, header, StatusRowH);
                 y += StatusRowH;
                 Holo.Place(_hint, Pad, y, inner, StatusRowH);
                 _hint.alignment = TextAlignmentOptions.MidlineLeft;
@@ -87,7 +88,7 @@ namespace SpatialTrading.Components
                 Holo.Place(_status, Pad, y, statusW, StatusRowH);
                 if (hasHint)
                 {
-                    Holo.Place(_hint, Pad + statusW + 12f, y, inner - statusW - 12f, StatusRowH);
+                    Holo.Place(_hint, Pad + statusW + 12f, y, header - statusW - 12f, StatusRowH);
                     _hint.alignment = TextAlignmentOptions.MidlineRight;
                 }
             }

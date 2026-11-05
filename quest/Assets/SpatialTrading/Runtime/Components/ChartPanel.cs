@@ -16,8 +16,14 @@ namespace SpatialTrading.Components
         public const string FourHour = "4H";
         public const string Daily = "1D";
         private const float PriceSize = 28f;
-        private const float ToggleW = 48f;
-        private const float ToggleH = 30f;
+        /// <summary>1D/4H toggles: 60 × 55 mm, about 2.9° at 1.10 m.</summary>
+        public const float ToggleW = 60f;
+        public const float ToggleH = 55f;
+        private const float ToggleGap = 6f;
+        /// <summary>Extra room between the toggles and the close button's reserve.</summary>
+        private const float CloseGap = 4f;
+        /// <summary>Narrower than this beside the toggles and the title moves under them.</summary>
+        private const float MinTitleW = 80f;
 
         [SerializeField] private TextMeshProUGUI _title;
         [SerializeField] private TextMeshProUGUI _price;
@@ -50,7 +56,7 @@ namespace SpatialTrading.Components
         private Button Toggle(string interval, out TextMeshProUGUI label)
         {
             var b = Holo.Button(transform, "Interval " + interval);
-            label = Holo.Text(b.transform, "IntervalLabel", Font, HoloStyle.MinText, HoloStyle.Cyan, TextAlignmentOptions.Midline, true);
+            label = Holo.Text(b.transform, "IntervalLabel", Font, TitleSize, HoloStyle.Cyan, TextAlignmentOptions.Midline, true);
             Holo.Stretch(label);
             label.text = interval;
             return b;
@@ -72,36 +78,46 @@ namespace SpatialTrading.Components
             var size = Size(rect);
             float w = size.x, h = size.y;
 
-            // Row 1: name [· price · change when compact] …… toggles.
-            Holo.Place(_daily, w - Pad - ToggleW, Top, ToggleW, ToggleH);
-            Holo.Place(_fourHour, w - Pad - 2 * ToggleW - 6f, Top, ToggleW, ToggleH);
+            // Header band (y 3..58): name [· price · change when compact and it fits] …… [4H][1D] [×]. The toggles line up
+            // with the close button; whatever does not fit beside them moves under the band.
+            var togglesX = Mathf.Max(8f, w - CloseReserveMm - CloseGap - 2 * ToggleW - ToggleGap);
+            Holo.Place(_fourHour, togglesX, CloseInset, ToggleW, ToggleH);
+            Holo.Place(_daily, togglesX + ToggleW + ToggleGap, CloseInset, ToggleW, ToggleH);
             StyleToggle(_fourHour, _fourHourLabel, interval == FourHour);
             StyleToggle(_daily, _dailyLabel, interval == Daily);
-            var rowW = w - 2 * Pad - 2 * ToggleW - 14f;
+            var bandW = togglesX - 8f - Pad; // free header width left of the toggles
             _title.text = view.Title;
             _price.text = view.PriceText;
             _change.text = view.ChangeText;
-            float y;
+            var y = CloseBottom + 2f;
             if (rect.Height <= 4)
             {
-                // Compact: one header row (price and change shrink last, the name first), then the honesty label.
+                // Compact: one row of name, price and change (the name gives way first), in the band when the price and
+                // change fit there whole, otherwise under it at full width; then the honesty label.
                 _price.fontSize = HoloStyle.MinNumber;
-                var priceW = Mathf.Min(Holo.Width(_price, view.PriceText) + 4f, rowW);
-                var changeW = Mathf.Min(Holo.Width(_change, view.ChangeText) + 4f, Mathf.Max(0f, rowW - priceW - 8f));
-                var titleW = Mathf.Min(Holo.Width(_title, view.Title) + 4f, Mathf.Max(0f, rowW - priceW - changeW - 16f));
                 var rowH = Holo.LineHeight(HoloStyle.MinNumber); // fits the 22 mm price line box
-                Holo.Place(_title, Pad, Top, titleW, rowH);
-                Holo.Place(_price, Pad + titleW + 8f, Top, priceW, rowH);
-                Holo.Place(_change, Pad + titleW + 8f + priceW + 8f, Top, changeW, rowH);
-                Holo.Show(_title, titleW > 24f);
-                y = Top + rowH;
+                var priceFull = Holo.Width(_price, view.PriceText) + 4f;
+                var changeFull = Holo.Width(_change, view.ChangeText) + 4f;
+                var inBand = priceFull + 8f + changeFull <= bandW;
+                var rowW = inBand ? bandW : w - 2 * Pad;
+                var rowY = inBand ? Top : y;
+                var priceW = Mathf.Min(priceFull, rowW);
+                var changeW = Mathf.Min(changeFull, Mathf.Max(0f, rowW - priceW - 8f));
+                var titleW = Mathf.Min(Holo.Width(_title, view.Title) + 4f, Mathf.Max(0f, rowW - priceW - changeW - 16f));
+                var showTitle = titleW > 24f;
+                var x = Pad;
+                Holo.Show(_title, showTitle);
+                if (showTitle) { Holo.Place(_title, x, rowY, titleW, rowH); x += titleW + 8f; }
+                Holo.Place(_price, x, rowY, priceW, rowH);
+                Holo.Place(_change, x + priceW + 8f, rowY, changeW, rowH);
+                if (!inBand) y += rowH;
             }
             else
             {
+                // Name in the band (or under it when the panel is narrow), then price and signed change on one baseline.
                 Holo.Show(_title, true);
-                Holo.Place(_title, Pad, Top, rowW, HeaderH);
-                // Row 2: price, signed change on the same baseline.
-                y = Top + HeaderH + 2f;
+                if (bandW >= MinTitleW) Holo.Place(_title, Pad, Top, bandW, HeaderH);
+                else { Holo.Place(_title, Pad, y, w - 2 * Pad, HeaderH); y += HeaderH; }
                 _price.fontSize = PriceSize;
                 var priceH = Holo.LineHeight(PriceSize);
                 var priceW = Mathf.Min(Holo.Width(_price, view.PriceText) + 4f, (w - 2 * Pad) * .6f);

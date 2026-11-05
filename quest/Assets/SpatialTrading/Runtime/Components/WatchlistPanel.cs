@@ -10,7 +10,8 @@ namespace SpatialTrading.Components
     /// <summary>
     /// 관심종목: one row per instrument with name, price, signed change, its own honesty label and a 20-day cyan mini
     /// chart. The whole row is one button (poke or ray); the selected row carries the 3 mm bright edge. Rows share the
-    /// panel height evenly (about 12 cm each at the default 6 × 11). Draws the <see cref="WatchlistRowView"/>s as given.
+    /// panel height evenly (about 11.5 cm each at the default 6 × 11), from under the close button to just above the resize
+    /// handle's grab square. Draws the <see cref="WatchlistRowView"/>s as given.
     /// </summary>
     public sealed class WatchlistPanel : HoloPanel
     {
@@ -41,8 +42,6 @@ namespace SpatialTrading.Components
         /// <summary>A row was pressed (poke, ray or the editor mouse via <see cref="TryRowAt"/>).</summary>
         public event Action<InstrumentRef> Selected;
 
-        private static float BodyTop => Top + HeaderH + 10f;
-
         protected override void Build()
         {
             _title = Holo.Text(transform, "Title", Font, TitleSize, HoloStyle.Ink);
@@ -56,16 +55,17 @@ namespace SpatialTrading.Components
             EnsureBuilt();
             var size = Size(rect);
             float w = size.x, h = size.y, inner = w - 2 * Pad;
-            Holo.Place(_title, Pad, Top, inner, HeaderH);
+            Holo.Place(_title, Pad, Top, w - CloseReserveMm - Pad, HeaderH);
             Rule(w, Top + HeaderH + 3f);
 
             var count = rows?.Count ?? 0;
-            var body = h - BodyTop - Top;
+            // The last row (less its bottom gap) ends 2 mm above the resize handle's grab square.
+            var body = h - HoloStyle.HandleClearMm - 2f + RowGap - BodyTop;
             _pitch = count > 0 ? body / count : 0f;
             Holo.Show(_empty, count == 0);
             if (count == 0)
             {
-                Holo.Place(_empty, Pad, BodyTop, inner, body);
+                Holo.Place(_empty, Pad, BodyTop, inner, h - BodyTop - Top);
                 _empty.text = ViewFormat.None;
             }
             Holo.Place(_rowsRoot, 0f, 0f, w, h);

@@ -93,14 +93,14 @@ namespace SpatialTrading.Spread
             else _workspace.Restore(entry.Id);
         }
 
-        /// <summary>Mouse fallback: runs the action of the button whose collider this is.</summary>
+        /// <summary>Mouse fallback: presses the button whose collider this is (its own click path, tick included).</summary>
         public bool TryPress(Collider c)
         {
             if (c == null) return false;
             foreach (var entry in _entries)
             {
                 if (entry?.Collider != c || !c.gameObject.activeInHierarchy) continue;
-                Activate(entry);
+                entry.Button.onClick.Invoke();
                 return true;
             }
             return false;

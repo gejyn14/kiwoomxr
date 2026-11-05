@@ -108,6 +108,9 @@ namespace SpatialTrading.Spread
                 if (panel == null) continue;
                 _byId[panel.Id] = panel;
                 panel.Dismissed += (p, direction) => Dismiss(p.Id, direction);
+                var id = panel.Id;
+                // The close button (×) is the non-gesture alternative to the flick: same path, thrown to the right.
+                if (panel.Content != null) panel.Content.CloseRequested += () => Dismiss(id, Rotation * Vector3.right);
                 switch (panel.Content)
                 {
                     case WatchlistPanel watchlist:
@@ -328,7 +331,8 @@ namespace SpatialTrading.Spread
             return r;
         }
 
-        /// <summary>Throws a panel away (flick). The order panel cancels any preflight first: no hidden order state.</summary>
+        /// <summary>Throws a panel away (flick or its close button). The order panel cancels any preflight first: no hidden
+        /// order state. A panel already dismissed (mid-flight or gone) is left alone.</summary>
         public void Dismiss(PanelId id, Vector3 direction)
         {
             if (_layout.IsDismissed(id)) return;
@@ -536,6 +540,11 @@ namespace SpatialTrading.Spread
                 _pressAt = at;
                 _pressPoint = hit.point;
                 var panel = hit.collider.GetComponentInParent<SpreadPanel>();
+                if (panel != null && !panel.IsFlying && !panel.IsHandle(hit.collider) && panel.Content != null && panel.Content.IsCloseAt(hit.point))
+                {
+                    panel.Content.CloseButton.onClick.Invoke(); // the button's own path: tick, then dismiss
+                    return;
+                }
                 if (panel != null && panel.IsHandle(hit.collider))
                 {
                     if (!panel.BeginResize()) return; // mid-flight: nothing to drag

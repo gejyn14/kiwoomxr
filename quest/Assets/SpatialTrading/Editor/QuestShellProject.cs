@@ -236,7 +236,8 @@ namespace SpatialTrading.Editor
         /// One spread panel: world canvas (1 unit = 1 mm) with poke+ray canvas pointables, backing card, the Task 13
         /// component, a top grab bar, a full-size body collider (grab volume) behind the canvas, a narrow ray-grab strip on
         /// the top edge, a kinematic Rigidbody, a one-point Grabbable whose transformer locks pitch and roll, and the
-        /// bottom-right resize handle (its own Grabbable, cyan triangle).
+        /// bottom-right resize handle (its own Grabbable: a 55 mm grab square centred on the corner, the 34 mm triangle mark
+        /// just inside it). The content builds its own close button (×).
         /// </summary>
         private static SpreadPanel BuildPanel(PanelId id, PanelRect rect, Camera eye)
         {
@@ -292,7 +293,7 @@ namespace SpatialTrading.Editor
             var handle = new GameObject("Resize handle");
             handle.transform.SetParent(root.transform, false);
             var handleCollider = handle.AddComponent<BoxCollider>();
-            handleCollider.size = new Vector3(SpreadPanel.HandleSize, SpreadPanel.HandleSize, .02f);
+            handleCollider.size = new Vector3(SpreadPanel.HandleHitSize, SpreadPanel.HandleHitSize, .02f);
             var handleBody = handle.AddComponent<Rigidbody>();
             QuickActionsAPI.AddGrabInteraction(handle);
             QuickActionsAPI.AddRayGrabInteraction(handle);
@@ -303,9 +304,10 @@ namespace SpatialTrading.Editor
             markCanvas.renderMode = RenderMode.WorldSpace;
             markCanvas.worldCamera = eye;
             var markRect = (RectTransform)markObject.transform;
-            markRect.sizeDelta = Vector2.one * (SpreadPanel.HandleSize * 1000f);
+            markRect.sizeDelta = Vector2.one * (SpreadPanel.HandleMarkSize * 1000f);
             markRect.localScale = Vector3.one * 0.001f;
-            markRect.localPosition = new Vector3(0f, 0f, -.001f);
+            // The handle sits on the corner; the mark stays inside the panel, its right angle in the corner.
+            markRect.localPosition = new Vector3(-SpreadPanel.HandleMarkSize * .5f, SpreadPanel.HandleMarkSize * .5f, -.001f);
             var triangle = new GameObject("Triangle", typeof(RectTransform)).AddComponent<CornerHandleGraphic>();
             triangle.rectTransform.SetParent(markRect, false);
             Stretch(triangle);
@@ -388,6 +390,9 @@ namespace SpatialTrading.Editor
             var button = resetCard.gameObject.AddComponent<Button>();
             button.targetGraphic = resetCard;
             button.navigation = new Navigation { mode = Navigation.Mode.None };
+            var glow = Card(resetRect, "Glow", Color.clear, Color.clear, HoloStyle.LineWidth, 8f);
+            Stretch(glow);
+            resetCard.gameObject.AddComponent<ButtonFeedback>().Configure(glow, HoloStyle.Cyan);
             var resetLabel = Text(resetRect, "Label", "기본 배치로", 20f, HoloStyle.Ink);
             Stretch(resetLabel);
             var resetCollider = new GameObject("Reset collider").AddComponent<BoxCollider>();
@@ -564,6 +569,7 @@ namespace SpatialTrading.Editor
                 if (panel.Handle.GetComponent<Grabbable>() == null || panel.Handle.GetComponent<GrabFreeTransformer>() == null)
                     throw new BuildFailedException("Missing resize handle grab on " + panel.name);
             }
+            ValidateTargets(panels);
             if (Object.FindObjectsByType<PointableCanvasModule>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length != 1)
                 throw new BuildFailedException("Expected exactly one SDK PointableCanvasModule.");
             foreach (var root in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
@@ -625,6 +631,142 @@ namespace SpatialTrading.Editor
                 var overlapX = left < (r.X + r.Width) * cell && right > r.X * cell;
                 var overlapY = bottom < (r.Y + r.Height) * cell && top > r.Y * cell;
                 if (overlapX && overlapY) throw new BuildFailedException("Dock overlaps the default " + id + " panel.");
+            }
+        }
+
+        /// <summary>
+        /// Press targets and the muted text colour. The saved scene is checked as it is (close button and handle on every
+        /// panel), then each panel's content is copied into a scratch preview scene (the saved scene is never touched) and
+        /// laid out at its default, smallest and largest size with synthetic views (the order panel idle and in preflight),
+        /// because most buttons are placed, and watchlist rows created, only on render. Every active Button there is at
+        /// least 55 canvas mm a side on the eye plane, 32 on the hand plane (drawn at 0.7×), and none reaches into the resize
+        /// handle's inner 27.5 mm square at the bottom-right corner.
+        /// </summary>
+        private static void ValidateTargets(SpreadPanel[] panels)
+        {
+            var muted = (Color32)HoloStyle.Muted;
+            if (muted.r != 0x86 || muted.g != 0xBA || muted.b != 0xC6 || muted.a != 0xFF)
+                throw new BuildFailedException("Muted text must be #86BAC6 (contrast over bright passthrough).");
+            if (!Mathf.Approximately(SpreadPanel.HandleHitSize * 1000f * .5f, HoloStyle.HandleClearMm) ||
+                !Mathf.Approximately(SpreadPanel.HandleMarkSize, 0.034f) || !Mathf.Approximately(SpreadPanel.HandleHitSize, 0.055f))
+                throw new BuildFailedException("Resize handle: 34 mm mark, 55 mm grab square, 27.5 mm button clearance.");
+            var defaults = SpreadLayout.TraderDefault();
+            foreach (var panel in panels)
+            {
+                var close = panel.Content.CloseButton;
+                if (close == null || close.GetComponent<ButtonFeedback>() == null)
+                    throw new BuildFailedException(panel.name + " has no close button.");
+                var closeRect = (RectTransform)close.transform;
+                var glyph = close.GetComponentInChildren<TMP_Text>(true);
+                if (closeRect.sizeDelta.x < HoloPanel.CloseSize || closeRect.sizeDelta.y < HoloPanel.CloseSize ||
+                    closeRect.anchorMin != Vector2.one || closeRect.anchorMax != Vector2.one || glyph == null || glyph.text != "\u00D7")
+                    throw new BuildFailedException(panel.name + " close button must be a 55 mm × in the top-right corner.");
+                var hit = panel.Handle.GetComponent<BoxCollider>();
+                if (hit == null || Mathf.Abs(hit.size.x - SpreadPanel.HandleHitSize) > 1e-5f || Mathf.Abs(hit.size.y - SpreadPanel.HandleHitSize) > 1e-5f ||
+                    hit.center != Vector3.zero)
+                    throw new BuildFailedException(panel.name + " resize handle must grab a 55 mm square centred on the corner.");
+                var size = HoloStyle.SizeFor(defaults[panel.Id]) * .001f;
+                var corner = new Vector3(size.x * .5f, -size.y * .5f);
+                if (Vector2.Distance(panel.Handle.localPosition, corner) > 1e-5f)
+                    throw new BuildFailedException(panel.name + " resize handle is not on the bottom-right corner.");
+            }
+
+            var scratch = EditorSceneManager.NewPreviewScene();
+            try
+            {
+                foreach (var panel in panels)
+                {
+                    var sized = SpreadLayout.TraderDefault();
+                    foreach (PanelId other in Enum.GetValues(typeof(PanelId))) if (other != panel.Id) sized.Dismiss(other);
+                    var rects = new[] { defaults[panel.Id], sized.Resize(panel.Id, 1, 1), sized.Resize(panel.Id, 99, 99) };
+                    foreach (var rect in rects)
+                        foreach (var preflight in panel.Id == PanelId.Order ? new[] { false, true } : new[] { false })
+                        {
+                            var copy = Object.Instantiate(panel.Content.gameObject);
+                            UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(copy, scratch);
+                            try
+                            {
+                                var content = copy.GetComponent<HoloPanel>();
+                                RenderSample(content, rect, preflight);
+                                CheckTargets(panel.name + " at " + rect + (preflight ? " (preflight)" : ""), content, rect);
+                            }
+                            finally { Object.DestroyImmediate(copy); }
+                        }
+                }
+            }
+            finally { EditorSceneManager.ClosePreviewScene(scratch); }
+        }
+
+        /// <summary>Draws a panel copy with synthetic views (labelled SYNTHETIC; nothing is sent anywhere).</summary>
+        private static void RenderSample(HoloPanel content, PanelRect rect, bool preflight)
+        {
+            var samsung = TraderCatalog.Samsung;
+            InstrumentRef ByCode(string code) => TraderCatalog.Charts.First(i => i.Code == code);
+            switch (content)
+            {
+                case WatchlistPanel watchlist:
+                    watchlist.Render(WatchlistView.From(TraderCatalog.Charts, code => PreviewMarketData.Candles(ByCode(code)),
+                        code => PreviewMarketData.Quote(ByCode(code)), _ => "KRX", _ => "KRX", samsung), rect);
+                    break;
+                case ChartPanel chart:
+                {
+                    var series = PreviewMarketData.Candles(samsung);
+                    chart.Render(ChartHeaderView.From(samsung, series, PreviewMarketData.Quote(samsung), ChartPanel.Daily, "KRX", "KRX"),
+                        series.Value, ChartPanel.Daily, rect);
+                    break;
+                }
+                case OrderBookPanel book:
+                    book.Render(OrderBookView.From(PreviewMarketData.Book(samsung), PreviewMarketData.Quote(samsung),
+                        SpreadLayout.BookDepthFor(rect), samsung, "KRX"), rect);
+                    break;
+                case NewsPanel news:
+                    news.Render(NewsView.Rank(null, samsung.Code, DateTimeOffset.UtcNow, NewsPanel.RowsFor(rect)), NewsView.Status(null), rect);
+                    break;
+                case BalancePanel balance:
+                    balance.Render(BalanceView.From(null), rect);
+                    break;
+                case OrderPanel order:
+                {
+                    var ticket = new OrderTicket();
+                    ticket.Select(samsung, TradingSession.KrxRegular);
+                    var book = PreviewMarketData.Book(samsung);
+                    var quote = PreviewMarketData.Quote(samsung);
+                    OrderPreview preview = null;
+                    if (preflight && !ticket.TryPrepare(book.Value.Asks[0].Price, quote.Value.LastPrice, out preview))
+                        throw new BuildFailedException("Could not lay out the order preview card for validation.");
+                    order.Render(OrderView.From(ticket, book, TradingSession.KrxRegular, quote), rect, preview);
+                    break;
+                }
+                default: throw new BuildFailedException("No sample render for " + content.GetType().Name);
+            }
+        }
+
+        private static void CheckTargets(string where, HoloPanel content, PanelRect rect)
+        {
+            var eye = rect.Plane == SpatialTrading.Domain.Plane.Eye;
+            var minimum = eye ? 55f : 32f;
+            var size = HoloStyle.SizeFor(rect);
+            var root = (RectTransform)content.transform;
+            var bounds = root.rect;
+            var corners = new Vector3[4];
+            var buttons = content.GetComponentsInChildren<Button>(false);
+            if (!buttons.Contains(content.CloseButton)) throw new BuildFailedException(where + ": the close button is not shown.");
+            foreach (var b in buttons)
+            {
+                var r = (RectTransform)b.transform;
+                if (r.rect.width < minimum - 1e-3f || r.rect.height < minimum - 1e-3f)
+                    throw new BuildFailedException(where + ": button " + b.name + " is " + r.rect.width.ToString("0.#") + " × " +
+                        r.rect.height.ToString("0.#") + ", under " + minimum + " mm.");
+                r.GetWorldCorners(corners);
+                float right = float.MinValue, bottom = float.MaxValue;
+                foreach (var c in corners)
+                {
+                    var local = root.InverseTransformPoint(c);
+                    right = Mathf.Max(right, local.x - bounds.xMin);
+                    bottom = Mathf.Min(bottom, local.y - bounds.yMin); // from the panel's bottom edge
+                }
+                if (right > size.x - HoloStyle.HandleClearMm + 1e-3f && bottom < HoloStyle.HandleClearMm - 1e-3f)
+                    throw new BuildFailedException(where + ": button " + b.name + " reaches into the resize handle's corner square.");
             }
         }
 
