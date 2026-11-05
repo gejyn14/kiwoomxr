@@ -208,6 +208,13 @@ namespace SpatialTrading.Tests
             Assert.That(l2.Restore(PanelId.News), Is.EqualTo(slot));
         }
 
+        [Test] public void DockWidthGrowsWithDismissedPanels()
+        {
+            Assert.That(SpreadLayout.DockWidthMm(0), Is.EqualTo(174f));
+            Assert.That(SpreadLayout.DockWidthMm(1), Is.EqualTo(246f));
+            Assert.That(SpreadLayout.DockWidthMm(5), Is.EqualTo(534f));
+        }
+
         [Test] public void KospiIsAnIndex()
         {
             Assert.That(TraderCatalog.Kospi.Kind, Is.EqualTo(InstrumentKind.Index));

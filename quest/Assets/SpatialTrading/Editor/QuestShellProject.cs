@@ -216,7 +216,8 @@ namespace SpatialTrading.Editor
             var layout = SpreadLayout.TraderDefault();
             var panels = ((PanelId[])Enum.GetValues(typeof(PanelId))).Select(id => BuildPanel(id, layout[id], eye)).ToArray();
             foreach (var panel in panels) panel.Bind(workspace);
-            workspace.Configure(head, eye, market, tray, panels);
+            var dock = BuildDock(workspace, eye);
+            workspace.Configure(head, eye, market, tray, panels, dock);
             BuildTray(tray, workspace, eye);
 
             // TraderSpread replaces the picker shell scene and is the only build scene; the old scripts stay until their own
@@ -342,6 +343,26 @@ namespace SpatialTrading.Editor
             grabbable.InjectOptionalRigidbody(body);
             grabbable.InjectOptionalThrowWhenUnselected(false);
             grabbable.InjectOptionalKinematicWhileSelected(true);
+        }
+
+        /// <summary>The always-visible restore dock under the left end of the eye row, with poke and ray canvas interactions.</summary>
+        private static SpreadDock BuildDock(SpreadWorkspace workspace, Camera eye)
+        {
+            var root = new GameObject("Spread Dock");
+            root.transform.SetPositionAndRotation(AuthoringHead + SpreadDock.LocalTopLeft, Quaternion.identity);
+            var canvasObject = new GameObject("Dock surface", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+            canvasObject.transform.SetParent(root.transform, false);
+            var surface = (RectTransform)canvasObject.transform;
+            surface.localScale = Vector3.one * 0.001f;
+            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.worldCamera = eye;
+            Stretch(Card(surface, "Background", HoloStyle.PanelFill, HoloStyle.Alpha(HoloStyle.Cyan, .55f), HoloStyle.LineWidth, 12f));
+            var dock = root.AddComponent<SpreadDock>();
+            dock.Configure(workspace, surface, _font);
+            QuickActionsAPI.AddPokeCanvasInteraction(canvasObject);
+            QuickActionsAPI.AddRayCanvasInteraction(canvasObject);
+            return dock;
         }
 
         /// <summary>The restore tray: a canvas with "기본 배치로" (poke/ray) and one grabbable icon per panel.</summary>
@@ -517,6 +538,7 @@ namespace SpatialTrading.Editor
                 PlayerSettings.GetScriptingBackend(NamedBuildTarget.Android) != ScriptingImplementation.IL2CPP)
                 throw new BuildFailedException("Android must use ARM64 IL2CPP.");
 
+            ValidateDock();
             var panels = Object.FindObjectsByType<SpreadPanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             if (panels.Length != 6) throw new BuildFailedException("Expected 6 SpreadPanels, found " + panels.Length + ".");
             foreach (PanelId id in Enum.GetValues(typeof(PanelId)))
@@ -562,6 +584,48 @@ namespace SpatialTrading.Editor
             if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().isDirty)
                 throw new BuildFailedException("Scene setup changed while loading. Review/save it, then validate again.");
             Debug.Log("[M1] Static scene/build validation passed. This does not validate headset behavior.");
+        }
+
+        /// <summary>The dock exists, the palm gesture is off, every dock button is at least 55 mm, and the dock (at its
+        /// widest, all panels dismissed) clears every eye-plane panel's default rect.</summary>
+        private static void ValidateDock()
+        {
+            var docks = Object.FindObjectsByType<SpreadDock>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (docks.Length != 1 || docks[0].Canvas == null) throw new BuildFailedException("Expected one SpreadDock.");
+            var dock = docks[0];
+            if (Object.FindFirstObjectByType<PalmTray>().PalmGesture)
+                throw new BuildFailedException("Palm gesture detection must be off by default.");
+            var entries = dock.Entries;
+            var panelCount = Enum.GetValues(typeof(PanelId)).Length;
+            if (entries.Length != panelCount + 1) throw new BuildFailedException("Dock needs a button per panel plus the reset button.");
+            foreach (var entry in entries)
+            {
+                if (entry == null || entry.Button == null || entry.Rect == null || entry.Collider == null)
+                    throw new BuildFailedException("Dock button is unbound.");
+                if (entry.Rect.sizeDelta.x < 55f || entry.Rect.sizeDelta.y < 55f)
+                    throw new BuildFailedException("Dock button " + entry.Rect.name + " is under 55 mm.");
+            }
+            var canvas = dock.Canvas.GetComponent<Canvas>();
+            if (canvas == null || canvas.renderMode != RenderMode.WorldSpace || canvas.worldCamera == null ||
+                canvas.GetComponentsInChildren<PokeInteractable>(true).Length == 0 || canvas.GetComponentsInChildren<RayInteractable>(true).Length == 0)
+                throw new BuildFailedException("Dock canvas is missing world-space or poke/ray bindings.");
+            var topLeft = dock.transform.position - AuthoringHead;
+            if ((topLeft - SpreadDock.LocalTopLeft).sqrMagnitude > 1e-8f || !Flat(dock.transform.rotation))
+                throw new BuildFailedException("Dock is not at its flat default position under the eye row.");
+            var left = topLeft.x;
+            var right = left + SpreadLayout.DockWidthMm(panelCount) * .001f;
+            var top = topLeft.y;
+            var bottom = top - SpreadDock.HeightMm * .001f;
+            var defaults = SpreadLayout.TraderDefault();
+            foreach (PanelId id in Enum.GetValues(typeof(PanelId)))
+            {
+                var r = defaults[id];
+                if (r.Plane != SpatialTrading.Domain.Plane.Eye) continue;
+                var cell = SpreadLayout.CellMetersFor(r.Plane);
+                var overlapX = left < (r.X + r.Width) * cell && right > r.X * cell;
+                var overlapY = bottom < (r.Y + r.Height) * cell && top > r.Y * cell;
+                if (overlapX && overlapY) throw new BuildFailedException("Dock overlaps the default " + id + " panel.");
+            }
         }
 
         /// <summary>

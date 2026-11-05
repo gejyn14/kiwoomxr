@@ -33,6 +33,7 @@ namespace SpatialTrading.Spread
         [SerializeField] private Camera _eye;
         [SerializeField] private MarketDataSession _market;
         [SerializeField] private PalmTray _tray;
+        [SerializeField] private SpreadDock _dock;
         [SerializeField] private SpreadPanel[] _panels = new SpreadPanel[0];
 
         private readonly SpreadLayout _layout = SpreadLayout.TraderDefault();
@@ -84,8 +85,8 @@ namespace SpatialTrading.Spread
         public IReadOnlyList<SpreadPanel> Panels => _panels;
         public SpreadPanel Panel(PanelId id) => _byId.TryGetValue(id, out var p) ? p : null;
 
-        public void Configure(Transform head, Camera eye, MarketDataSession market, PalmTray tray, SpreadPanel[] panels)
-        { _head = head; _eye = eye; _market = market; _tray = tray; _panels = panels; }
+        public void Configure(Transform head, Camera eye, MarketDataSession market, PalmTray tray, SpreadPanel[] panels, SpreadDock dock = null)
+        { _head = head; _eye = eye; _market = market; _tray = tray; _panels = panels; _dock = dock; }
 
         /// <summary>Panel centre in workspace space (x right, y up, z forward; metres from the head), in the plane's cells.</summary>
         public static Vector3 LocalCenter(PanelRect r)
@@ -211,6 +212,7 @@ namespace SpatialTrading.Spread
 
         private void PlaceAll(bool animate)
         {
+            if (_dock != null) _dock.Place();
             foreach (var panel in _panels)
             {
                 // Dismissed or mid-flight panels keep their own motion; Restore and Reset place them again.
@@ -530,6 +532,7 @@ namespace SpatialTrading.Spread
             if (mouse.leftButton.wasPressedThisFrame && _drag == MouseDrag.None)
             {
                 if (!Physics.Raycast(ray, out var hit, 6f)) return;
+                if (_dock != null && _dock.TryPress(hit.collider)) return;
                 _pressAt = at;
                 _pressPoint = hit.point;
                 var panel = hit.collider.GetComponentInParent<SpreadPanel>();

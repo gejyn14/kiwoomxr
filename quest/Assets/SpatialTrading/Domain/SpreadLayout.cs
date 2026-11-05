@@ -71,6 +71,9 @@ namespace SpatialTrading.Domain
 
         public static float CellMetersFor(Plane p) => p == Plane.Hand ? HandCellMeters : CellMeters;
 
+        /// <summary>Restore dock width in mm: padding, one 64 mm button plus 8 mm gap per dismissed panel, "기본 배치로" (150 mm).</summary>
+        public static float DockWidthMm(int dismissedCount) => 24f + dismissedCount * (64f + 8f) + 150f;
+
         public static float ScaleFor(Plane p) => p == Plane.Hand ? HandScale : 1f;
 
         public static SpreadLayout TraderDefault()

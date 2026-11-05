@@ -10,7 +10,8 @@ using UnityEngine;
 namespace SpatialTrading.Spread
 {
     /// <summary>
-    /// Restore tray for dismissed panels. With hand tracking it opens 0.12 m above the left hand once the palm has faced
+    /// Restore tray for dismissed panels (the always-visible <see cref="SpreadDock"/> is the main way back; palm detection
+    /// is off unless <c>_palmGesture</c> is set). With hand tracking it opens 0.12 m above the left hand once the palm has faced
     /// up (palm normal · world up &gt; 0.7) for 0.4 s, and closes after the palm has been away for 0.6 s. Without hands
     /// (simulator controllers, Mac editor) the T key or the controller Y button pins the same tray ahead of the head and
     /// low. Each dismissed panel is an icon (short name, cyan edge); grabbing one and pulling it 0.1 m out restores the
@@ -42,6 +43,9 @@ namespace SpatialTrading.Spread
             [NonSerialized] public Vector3 Slot;
         }
 
+        /// <summary>Palm-pose detection can collide with Quest's system palm gesture, so it is off; the dock restores panels.
+        /// T and the controller Y button still pin the tray (development aid).</summary>
+        [SerializeField] private bool _palmGesture = false;
         [SerializeField] private SpreadWorkspace _workspace;
         [SerializeField] private Transform _root;
         [SerializeField] private RectTransform _canvas;
@@ -62,6 +66,7 @@ namespace SpatialTrading.Spread
 
         public bool IsShown => _root != null && _root.gameObject.activeSelf;
         public bool IsPinned => _pinned;
+        public bool PalmGesture => _palmGesture;
         public Transform TrayRoot => _root;
 
         public void Configure(SpreadWorkspace workspace, Transform root, RectTransform canvas, RectTransform resetButton,
@@ -162,7 +167,7 @@ namespace SpatialTrading.Spread
         private void Update()
         {
             if (OVRInput.GetDown(OVRInput.Button.Four)) Toggle(); // controller Y
-            if (_pinned) return;
+            if (_pinned || !_palmGesture) return;
             var palmUp = TryPalm(out var palm);
             var now = Time.unscaledTime;
             if (palmUp)
