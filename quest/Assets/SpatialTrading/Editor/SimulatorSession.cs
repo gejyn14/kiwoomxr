@@ -60,7 +60,7 @@ namespace SpatialTrading.Editor
             {
                 capturedAt = DateTimeOffset.UtcNow.ToString("O"),
                 scope = "EDITOR_SIMULATOR_ONLY",
-                selectedInstrument = spread.SelectedInstrument.Id,
+                selectedInstrument = code,
                 ticketState = spread.Ticket.State.ToString(),
                 session = spread.Session.ToString(),
                 dismissed = spread.Layout.Dismissed.Select(id => id.ToString()).ToArray(),

@@ -2,16 +2,16 @@ using System;
 using SpatialTrading.Domain;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace SpatialTrading.Components
 {
     /// <summary>
-    /// One chart on the spread: header (name, price, signed change, honesty label), 4H/1D toggle and the candle plot
-    /// whose detail follows the panel size. Draws the <see cref="ChartHeaderView"/> as given.
+    /// The spread's one chart, always the selected instrument (chosen in 관심종목): header (name, price, signed change,
+    /// honesty label), 4H/1D toggle and the candle plot whose detail follows the panel size. Draws the
+    /// <see cref="ChartHeaderView"/> as given.
     /// </summary>
-    public sealed class ChartPanel : HoloPanel, IPointerClickHandler
+    public sealed class ChartPanel : HoloPanel
     {
         public const string FourHour = "4H";
         public const string Daily = "1D";
@@ -28,15 +28,10 @@ namespace SpatialTrading.Components
         [SerializeField] private Button _daily;
         [SerializeField] private TextMeshProUGUI _dailyLabel;
         [SerializeField] private CandleChartGraphic _plot;
-        private bool _selected;
-        private int _lastClick = -1;
 
         /// <summary>"4H" or "1D", raised when a toggle is pressed.</summary>
         public event Action<string> IntervalChanged;
-        /// <summary>Raised when the panel body is clicked (poke or ray).</summary>
-        public event Action Selected;
 
-        public bool IsSelected => _selected;
         public CandleChartGraphic Plot { get { EnsureBuilt(); return _plot; } }
 
         protected override void Build()
@@ -127,21 +122,6 @@ namespace SpatialTrading.Components
             _plot.CountWidth = w;
             if (Font != null) _plot.Font = Font;
             _plot.SetSeries(series, SpreadLayout.ChartDetailFor(rect));
-        }
-
-        /// <summary>Selected: 3 mm bright-cyan edge; otherwise the 2 mm cyan edge.</summary>
-        public void SetSelected(bool selected)
-        {
-            EnsureBuilt();
-            _selected = selected;
-            SetFrame(selected);
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button != PointerEventData.InputButton.Left || _lastClick == Time.frameCount) return;
-            _lastClick = Time.frameCount;
-            Selected?.Invoke();
         }
 
         private static void StyleToggle(Button b, TMP_Text label, bool on)

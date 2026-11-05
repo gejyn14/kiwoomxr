@@ -12,7 +12,8 @@ namespace SpatialTrading.Spread
     /// One per spread panel root. Follows its <see cref="Grabbable"/> while held, feeds the <see cref="FlickDetector"/>,
     /// and on release either raises <see cref="Dismissed"/> (a flick) or hands the drop point to the workspace, then
     /// eases into the snapped grid position. The bottom-right corner handle (its own Grabbable) resizes in whole cells.
-    /// Rotation is always the workspace's: yaw only, pitch and roll 0.
+    /// Rotation is always the workspace's: yaw only, pitch and roll 0. Scale is the plane's
+    /// (<see cref="SpreadLayout.ScaleFor"/>: eye 1, hand 0.7); the canvas keeps 50 mm cells in its own units.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class SpreadPanel : MonoBehaviour
@@ -49,6 +50,7 @@ namespace SpatialTrading.Spread
         private Vector3 _resizeTopLeft;
         private Vector2Int _lastRequested;
         private Vector3 _snapFrom, _snapTo;
+        private float _snapFromScale = 1f, _scale = 1f;
         private float _snapStart = -1f;
         private Coroutine _effect;
         private bool _flying;
@@ -82,10 +84,12 @@ namespace SpatialTrading.Spread
 
         public bool IsHandle(Collider c) => c != null && c == _handleCollider;
 
-        /// <summary>Sizes the surface, colliders and handle to the rect (cells × 50 mm). Safe in edit mode.</summary>
+        /// <summary>Sizes the surface, colliders and handle to the rect (cells × 50 mm in panel space; the plane scale
+        /// applies on top). Safe in edit mode.</summary>
         public void ApplySize(PanelRect rect)
         {
             _rect = rect;
+            _scale = SpreadLayout.ScaleFor(rect.Plane);
             var size = HoloStyle.SizeFor(rect);                       // millimetres
             float w = size.x * 0.001f, h = size.y * 0.001f;           // metres
             if (_surface != null && _surface.sizeDelta != size) _surface.sizeDelta = size;
@@ -104,19 +108,24 @@ namespace SpatialTrading.Spread
             if (_handle != null && !_resizing) ResetHandle();
         }
 
-        /// <summary>Places the panel at its snapped pose; eases there in <see cref="SnapSeconds"/> when animated.</summary>
+        /// <summary>Places the panel at its snapped pose and plane scale; eases both there in <see cref="SnapSeconds"/>
+        /// when animated.</summary>
         public void Place(PanelRect rect, Vector3 position, Quaternion rotation, bool animate)
         {
             ApplySize(rect);
             transform.rotation = rotation;
             if (_moving) return; // the hand owns the position until release
-            if (!animate || !gameObject.activeInHierarchy || (transform.position - position).sqrMagnitude < 1e-8f)
+            var current = transform.localScale.x;
+            if (!animate || !gameObject.activeInHierarchy ||
+                ((transform.position - position).sqrMagnitude < 1e-8f && Mathf.Approximately(current, _scale)))
             {
                 transform.position = position;
+                if (_effect == null) transform.localScale = Vector3.one * _scale; // a running flourish scales on its own
                 _snapStart = -1f;
                 return;
             }
             _snapFrom = transform.position;
+            _snapFromScale = current;
             _snapTo = position;
             _snapStart = Time.unscaledTime;
         }
@@ -192,7 +201,7 @@ namespace SpatialTrading.Spread
             if (_effect != null) Settle();
             _resizing = true;
             _lastRequested = new Vector2Int(_rect.Width, _rect.Height);
-            var size = HoloStyle.SizeFor(_rect) * 0.001f;
+            var size = HoloStyle.SizeFor(_rect) * (0.001f * _scale);
             _resizeTopLeft = transform.position + transform.rotation * new Vector3(-size.x * .5f, size.y * .5f, 0f);
             return true;
         }
@@ -241,9 +250,10 @@ namespace SpatialTrading.Spread
             {
                 _handle.rotation = _workspace.Rotation;
                 var d = Quaternion.Inverse(_workspace.Rotation) * (_handle.position - _resizeTopLeft);
-                var cell = SpreadLayout.CellMeters;
-                var want = new Vector2Int(Mathf.Max(1, Mathf.RoundToInt((d.x + HandleSize * .5f) / cell)),
-                                          Mathf.Max(1, Mathf.RoundToInt((-d.y + HandleSize * .5f) / cell)));
+                var cell = SpreadLayout.CellMetersFor(_rect.Plane);
+                var half = HandleSize * .5f * _scale; // the handle shrinks with its panel
+                var want = new Vector2Int(Mathf.Max(1, Mathf.RoundToInt((d.x + half) / cell)),
+                                          Mathf.Max(1, Mathf.RoundToInt((-d.y + half) / cell)));
                 if (want != _lastRequested)
                 {
                     _lastRequested = want;
@@ -255,6 +265,7 @@ namespace SpatialTrading.Spread
                 var k = Mathf.Clamp01((Time.unscaledTime - _snapStart) / SnapSeconds);
                 var e = 1f - (1f - k) * (1f - k) * (1f - k); // ease-out cubic
                 transform.position = Vector3.LerpUnclamped(_snapFrom, _snapTo, e);
+                if (_effect == null) transform.localScale = Vector3.one * Mathf.LerpUnclamped(_snapFromScale, _scale, e);
                 if (k >= 1f) _snapStart = -1f;
             }
         }
@@ -324,7 +335,7 @@ namespace SpatialTrading.Spread
                 var k = Mathf.Clamp01((Time.unscaledTime - t0) / DismissSeconds);
                 var e = 1f - (1f - k) * (1f - k);
                 transform.position = start + direction * (DismissDistance * e) + toward * (FlyLift * Mathf.Min(1f, k * 4f));
-                transform.localScale = Vector3.one * Mathf.Lerp(1f, DismissScale, e);
+                transform.localScale = Vector3.one * (_scale * Mathf.Lerp(1f, DismissScale, e));
                 SetAlpha(1f - e);
                 if (k >= 1f) break;
                 yield return null;
@@ -332,7 +343,7 @@ namespace SpatialTrading.Spread
             _effect = null;
             EndFlightState();
             gameObject.SetActive(false);
-            transform.localScale = Vector3.one;
+            transform.localScale = Vector3.one * _scale;
             SetAlpha(1f);
         }
 
@@ -343,12 +354,12 @@ namespace SpatialTrading.Spread
             {
                 var k = Mathf.Clamp01((Time.unscaledTime - t0) / AppearSeconds);
                 var e = 1f - (1f - k) * (1f - k);
-                transform.localScale = Vector3.one * Mathf.Lerp(DismissScale, 1f, e);
+                transform.localScale = Vector3.one * (_scale * Mathf.Lerp(DismissScale, 1f, e));
                 SetAlpha(e);
                 if (k >= 1f) break;
                 yield return null;
             }
-            transform.localScale = Vector3.one;
+            transform.localScale = Vector3.one * _scale;
             SetAlpha(1f);
             _effect = null;
         }
@@ -359,7 +370,7 @@ namespace SpatialTrading.Spread
             if (_effect != null) StopCoroutine(_effect);
             _effect = null;
             EndFlightState();
-            transform.localScale = Vector3.one;
+            transform.localScale = Vector3.one * _scale;
             SetAlpha(1f);
         }
 

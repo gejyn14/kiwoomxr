@@ -76,10 +76,8 @@ namespace SpatialTrading.Spread
         {
             switch (id)
             {
-                case PanelId.ChartKiwoom: return "키움";
-                case PanelId.ChartSamsung: return "삼성";
-                case PanelId.ChartSkHynix: return "SK";
-                case PanelId.ChartKospi: return "코스피";
+                case PanelId.Watchlist: return "관심";
+                case PanelId.Chart: return "차트";
                 case PanelId.OrderBook: return "호가";
                 case PanelId.News: return "뉴스";
                 case PanelId.Balance: return "잔고";

@@ -19,10 +19,10 @@ namespace SpatialTrading.Tests
         {
             var memo = new RenderMemo<PanelId>();
             var q = Quote(225000m);
-            Assert.That(memo.Unchanged(PanelId.OrderBook, RenderMemo.Of(q), Rect, PanelId.ChartSamsung), Is.False);
-            memo.Remember(PanelId.OrderBook, RenderMemo.Of(q), Rect, PanelId.ChartSamsung);
-            Assert.That(memo.Unchanged(PanelId.OrderBook, RenderMemo.Of(q), Rect, PanelId.ChartSamsung), Is.True);
-            Assert.That(memo.Unchanged(PanelId.News, RenderMemo.Of(q), Rect, PanelId.ChartSamsung), Is.False); // per panel
+            Assert.That(memo.Unchanged(PanelId.OrderBook, RenderMemo.Of(q), Rect, PanelId.Chart), Is.False);
+            memo.Remember(PanelId.OrderBook, RenderMemo.Of(q), Rect, PanelId.Chart);
+            Assert.That(memo.Unchanged(PanelId.OrderBook, RenderMemo.Of(q), Rect, PanelId.Chart), Is.True);
+            Assert.That(memo.Unchanged(PanelId.News, RenderMemo.Of(q), Rect, PanelId.Chart), Is.False); // per panel
         }
 
         [Test]
@@ -54,13 +54,13 @@ namespace SpatialTrading.Tests
             var q = RenderMemo.Of(Quote(1m));
             object[] Inputs(PanelRect r, PanelId sel, TradingSession s, string interval, TicketState t) =>
                 new object[] { q, r, sel, s, interval, t };
-            memo.Remember(PanelId.ChartSamsung, Inputs(Rect, PanelId.ChartSamsung, TradingSession.KrxRegular, "1D", TicketState.Idle));
-            Assert.That(memo.Unchanged(PanelId.ChartSamsung, Inputs(Rect, PanelId.ChartSamsung, TradingSession.KrxRegular, "1D", TicketState.Idle)), Is.True);
-            Assert.That(memo.Unchanged(PanelId.ChartSamsung, Inputs(new PanelRect(Plane.Eye, 0, 0, 5, 3), PanelId.ChartSamsung, TradingSession.KrxRegular, "1D", TicketState.Idle)), Is.False);
-            Assert.That(memo.Unchanged(PanelId.ChartSamsung, Inputs(Rect, PanelId.ChartKiwoom, TradingSession.KrxRegular, "1D", TicketState.Idle)), Is.False);
-            Assert.That(memo.Unchanged(PanelId.ChartSamsung, Inputs(Rect, PanelId.ChartSamsung, TradingSession.Nxt, "1D", TicketState.Idle)), Is.False);
-            Assert.That(memo.Unchanged(PanelId.ChartSamsung, Inputs(Rect, PanelId.ChartSamsung, TradingSession.KrxRegular, "4H", TicketState.Idle)), Is.False);
-            Assert.That(memo.Unchanged(PanelId.ChartSamsung, Inputs(Rect, PanelId.ChartSamsung, TradingSession.KrxRegular, "1D", TicketState.Preflight)), Is.False);
+            memo.Remember(PanelId.Chart, Inputs(Rect, PanelId.Chart, TradingSession.KrxRegular, "1D", TicketState.Idle));
+            Assert.That(memo.Unchanged(PanelId.Chart, Inputs(Rect, PanelId.Chart, TradingSession.KrxRegular, "1D", TicketState.Idle)), Is.True);
+            Assert.That(memo.Unchanged(PanelId.Chart, Inputs(new PanelRect(Plane.Eye, 0, 0, 5, 3), PanelId.Chart, TradingSession.KrxRegular, "1D", TicketState.Idle)), Is.False);
+            Assert.That(memo.Unchanged(PanelId.Chart, Inputs(Rect, PanelId.Watchlist, TradingSession.KrxRegular, "1D", TicketState.Idle)), Is.False);
+            Assert.That(memo.Unchanged(PanelId.Chart, Inputs(Rect, PanelId.Chart, TradingSession.Nxt, "1D", TicketState.Idle)), Is.False);
+            Assert.That(memo.Unchanged(PanelId.Chart, Inputs(Rect, PanelId.Chart, TradingSession.KrxRegular, "4H", TicketState.Idle)), Is.False);
+            Assert.That(memo.Unchanged(PanelId.Chart, Inputs(Rect, PanelId.Chart, TradingSession.KrxRegular, "1D", TicketState.Preflight)), Is.False);
         }
 
         [Test]

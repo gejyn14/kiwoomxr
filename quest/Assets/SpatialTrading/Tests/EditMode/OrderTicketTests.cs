@@ -77,6 +77,22 @@ namespace SpatialTrading.Tests
         }
 
         [Test]
+        public void SelectingKospiKeepsOrderLocked()
+        {
+            var t = new OrderTicket();
+            t.Select(TraderCatalog.Samsung, TradingSession.KrxRegular);
+            t.Select(TraderCatalog.Kospi, TradingSession.KrxRegular);
+            Assert.That(t.HasSelection, Is.True);
+            Assert.That(t.State, Is.EqualTo(TicketState.Locked));
+            Assert.That(t.LockReason, Is.EqualTo("지수 · 주문 불가"));
+            Assert.That(t.TryPrepare(225000m, 224500m, out _), Is.False);
+            t.Select(TraderCatalog.Samsung, TradingSession.KrxRegular);
+            Assert.That(t.State, Is.EqualTo(TicketState.Idle));
+            Assert.That(t.LockReason, Is.Null);
+            Assert.That(t.TryPrepare(225000m, 224500m, out _), Is.True);
+        }
+
+        [Test]
         public void ConditionalIsAlwaysDisabled()
         {
             foreach (TradingSession s in Enum.GetValues(typeof(TradingSession)))

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace SpatialTrading.Domain
 {
-    public enum PanelId { ChartKiwoom, ChartSamsung, ChartSkHynix, ChartKospi, OrderBook, News, Balance, Order }
+    public enum PanelId { Watchlist, Chart, OrderBook, News, Balance, Order }
 
     public enum Plane { Eye, Hand }
 
@@ -38,10 +38,15 @@ namespace SpatialTrading.Domain
     /// <summary>Panel placement on the two grid planes. Pure data, no engine types.</summary>
     public sealed class SpreadLayout
     {
+        /// <summary>Eye-plane cell edge; <see cref="CellMetersFor"/> gives each plane's own.</summary>
         public const float CellMeters = 0.05f;
+        public const float HandCellMeters = 0.035f;
+        /// <summary>Hand-plane panels are the same canvas drawn at 0.7× (50 mm canvas cell × 0.7 = 35 mm).</summary>
+        public const float HandScale = 0.7f;
 
-        const int EyeMinX = -20, EyeMaxX = 19, EyeMinY = -6, EyeMaxY = 5;
-        const int HandMinX = -10, HandMaxX = 9, HandMinY = -3, HandMaxY = 2;
+        // Cell indices, both ends inclusive. Eye x −13..12 keeps every edge within ±30° at 1.10 m.
+        const int EyeMinX = -13, EyeMaxX = 12, EyeMinY = -7, EyeMaxY = 4;
+        const int HandMinX = -9, HandMaxX = 8, HandMinY = -4, HandMaxY = 2;
 
         static readonly PanelId[] Ids = (PanelId[])Enum.GetValues(typeof(PanelId));
 
@@ -54,17 +59,19 @@ namespace SpatialTrading.Domain
         {
             switch (id)
             {
-                case PanelId.ChartKiwoom: return new PanelRect(Plane.Eye, -19, 1, 7, 5);
-                case PanelId.ChartSamsung: return new PanelRect(Plane.Eye, -12, 1, 7, 5);
-                case PanelId.ChartSkHynix: return new PanelRect(Plane.Eye, -19, -5, 7, 5);
-                case PanelId.ChartKospi: return new PanelRect(Plane.Eye, -12, -5, 7, 5);
-                case PanelId.OrderBook: return new PanelRect(Plane.Eye, -4, -5, 9, 11);
-                case PanelId.News: return new PanelRect(Plane.Eye, 5, -5, 7, 11);
-                case PanelId.Balance: return new PanelRect(Plane.Hand, -9, -2, 9, 5);
-                case PanelId.Order: return new PanelRect(Plane.Hand, 1, -3, 9, 6);
+                case PanelId.Watchlist: return new PanelRect(Plane.Eye, -13, -7, 6, 11);
+                case PanelId.Chart: return new PanelRect(Plane.Eye, -7, -2, 8, 6);
+                case PanelId.Balance: return new PanelRect(Plane.Eye, -7, -7, 8, 5);
+                case PanelId.OrderBook: return new PanelRect(Plane.Eye, 1, -7, 7, 11);
+                case PanelId.News: return new PanelRect(Plane.Eye, 8, -7, 5, 11);
+                case PanelId.Order: return new PanelRect(Plane.Hand, -2, -3, 9, 6);
                 default: throw new ArgumentOutOfRangeException(nameof(id));
             }
         }
+
+        public static float CellMetersFor(Plane p) => p == Plane.Hand ? HandCellMeters : CellMeters;
+
+        public static float ScaleFor(Plane p) => p == Plane.Hand ? HandScale : 1f;
 
         public static SpreadLayout TraderDefault()
         {
@@ -90,8 +97,9 @@ namespace SpatialTrading.Domain
         public PanelRect Drop(PanelId id, Plane plane, float xMeters, float yMeters)
         {
             var cur = rects[id];
-            int x = (int)Math.Round(xMeters / CellMeters - cur.Width / 2.0, MidpointRounding.AwayFromZero);
-            int y = (int)Math.Round(yMeters / CellMeters - cur.Height / 2.0, MidpointRounding.AwayFromZero);
+            var cell = CellMetersFor(plane);
+            int x = (int)Math.Round(xMeters / cell - cur.Width / 2.0, MidpointRounding.AwayFromZero);
+            int y = (int)Math.Round(yMeters / cell - cur.Height / 2.0, MidpointRounding.AwayFromZero);
             return Place(id, plane, x, y, cur.Width, cur.Height, out var placed) ? Store(id, placed) : cur;
         }
 
@@ -125,7 +133,7 @@ namespace SpatialTrading.Domain
         public static ChartDetail ChartDetailFor(PanelRect r)
         {
             int area = r.Width * r.Height;
-            return area <= 20 ? ChartDetail.Line : area <= 63 ? ChartDetail.Candles : ChartDetail.CandlesWithAxes;
+            return area <= 20 ? ChartDetail.Line : area <= 40 ? ChartDetail.Candles : ChartDetail.CandlesWithAxes;
         }
 
         public static int BookDepthFor(PanelRect r) => r.Height >= 11 ? 10 : 5;
@@ -140,6 +148,7 @@ namespace SpatialTrading.Domain
         {
             switch (id)
             {
+                case PanelId.Watchlist: minW = 5; minH = 8; maxW = 8; maxH = 12; break;
                 case PanelId.OrderBook: minW = 6; minH = 8; maxW = 12; maxH = 12; break;
                 case PanelId.News: minW = 5; minH = 6; maxW = 10; maxH = 12; break;
                 case PanelId.Balance: minW = 6; minH = 3; maxW = 12; maxH = 6; break;

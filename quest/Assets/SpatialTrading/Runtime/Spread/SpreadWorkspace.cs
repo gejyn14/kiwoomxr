@@ -15,20 +15,19 @@ namespace SpatialTrading.Spread
 {
     /// <summary>
     /// The trader spread: owns the <see cref="SpreadLayout"/>, pins the workspace origin to the head position and yaw,
-    /// routes chart selection into the <see cref="OrderTicket"/>, and redraws the panels from <see cref="MarketDataSession"/>.
-    /// Eye plane: 1.10 m ahead at head height. Hand plane: 0.60 m ahead, 0.45 m below. Every panel faces the workspace
-    /// forward (yaw only). Nothing here sends an order.
+    /// routes the selected instrument (picked in 관심종목) into the chart, order book, news and the <see cref="OrderTicket"/>,
+    /// and redraws the panels from <see cref="MarketDataSession"/>. Eye plane: 1.10 m ahead at head height, 50 mm cells.
+    /// Hand plane: 0.45 m ahead, 0.24 m below, 35 mm cells at 0.7× scale. Every panel faces the workspace forward (yaw
+    /// only). Nothing here sends an order.
     /// </summary>
     [DefaultExecutionOrder(100)]
     public sealed class SpreadWorkspace : MonoBehaviour
     {
         public const float EyeDistance = 1.10f;
-        public const float HandDistance = 0.60f;
-        public const float HandHeight = -0.45f;
+        public const float HandDistance = 0.45f;
+        public const float HandHeight = -0.24f;
         private const float MouseClickPixels = 6f;
         private static readonly TimeSpan Kst = TimeSpan.FromHours(9);
-
-        public static readonly PanelId[] ChartIds = { PanelId.ChartKiwoom, PanelId.ChartSamsung, PanelId.ChartSkHynix, PanelId.ChartKospi };
 
         [SerializeField] private Transform _head;
         [SerializeField] private Camera _eye;
@@ -39,10 +38,10 @@ namespace SpatialTrading.Spread
         private readonly SpreadLayout _layout = SpreadLayout.TraderDefault();
         private readonly OrderTicket _ticket = new OrderTicket();
         private readonly Dictionary<PanelId, SpreadPanel> _byId = new Dictionary<PanelId, SpreadPanel>();
-        private readonly Dictionary<PanelId, string> _intervals = new Dictionary<PanelId, string>();
         private readonly RenderMemo<PanelId> _rendered = new RenderMemo<PanelId>(); // last render inputs per panel
         private OrderPreview _preview; // cached once per 매수 준비; never re-prepared on render
-        private PanelId _selected = PanelId.ChartSamsung;
+        private InstrumentRef _selected = TraderCatalog.Samsung;
+        private string _interval = ChartPanel.Daily;
         private TradingSession _session = TradingSession.Closed;
         private float _nextTick;
         private int _newsMinute = -1;
@@ -64,13 +63,16 @@ namespace SpatialTrading.Spread
         private UnityEngine.Plane _dragPlane;
         private Vector3 _dragOffset;
         private Vector2 _pressAt;
+        private Vector3 _pressPoint;
 
         /// <summary>Raised after any placement, dismissal, restore or reset.</summary>
         public event Action LayoutChanged;
 
         public SpreadLayout Layout => _layout;
-        public PanelId Selected => _selected;
-        public InstrumentRef SelectedInstrument => InstrumentFor(_selected);
+        /// <summary>The instrument the chart, order book, news and order ticket follow (one of <see cref="TraderCatalog.Charts"/>).</summary>
+        public InstrumentRef SelectedInstrument => _selected;
+        /// <summary>The chart's interval: "1D" or "4H".</summary>
+        public string Interval => _interval;
         public OrderTicket Ticket => _ticket;
         public OrderPreview CachedPreview => _preview;
         public TradingSession Session => _session;
@@ -80,31 +82,17 @@ namespace SpatialTrading.Spread
         public Camera Eye => _eye;
         public MarketDataSession Market => _market;
         public IReadOnlyList<SpreadPanel> Panels => _panels;
-        public string IntervalOf(PanelId id) => _intervals.TryGetValue(id, out var i) ? i : ChartPanel.Daily;
         public SpreadPanel Panel(PanelId id) => _byId.TryGetValue(id, out var p) ? p : null;
 
         public void Configure(Transform head, Camera eye, MarketDataSession market, PalmTray tray, SpreadPanel[] panels)
         { _head = head; _eye = eye; _market = market; _tray = tray; _panels = panels; }
 
-        public static bool IsChart(PanelId id) => Array.IndexOf(ChartIds, id) >= 0;
-
-        public static InstrumentRef InstrumentFor(PanelId id)
-        {
-            switch (id)
-            {
-                case PanelId.ChartKiwoom: return TraderCatalog.Kiwoom;
-                case PanelId.ChartSamsung: return TraderCatalog.Samsung;
-                case PanelId.ChartSkHynix: return TraderCatalog.SkHynix;
-                case PanelId.ChartKospi: return TraderCatalog.Kospi;
-                default: return null;
-            }
-        }
-
-        /// <summary>Panel centre in workspace space (x right, y up, z forward; metres from the head).</summary>
+        /// <summary>Panel centre in workspace space (x right, y up, z forward; metres from the head), in the plane's cells.</summary>
         public static Vector3 LocalCenter(PanelRect r)
         {
-            var x = (r.X + r.Width * .5f) * SpreadLayout.CellMeters;
-            var y = (r.Y + r.Height * .5f) * SpreadLayout.CellMeters;
+            var cell = SpreadLayout.CellMetersFor(r.Plane);
+            var x = (r.X + r.Width * .5f) * cell;
+            var y = (r.Y + r.Height * .5f) * cell;
             return r.Plane == DomainPlane.Eye ? new Vector3(x, y, EyeDistance) : new Vector3(x, y + HandHeight, HandDistance);
         }
 
@@ -114,18 +102,18 @@ namespace SpatialTrading.Spread
 
         private void Awake()
         {
-            foreach (var id in ChartIds) _intervals[id] = ChartPanel.Daily;
             foreach (var panel in _panels)
             {
                 if (panel == null) continue;
                 _byId[panel.Id] = panel;
                 panel.Dismissed += (p, direction) => Dismiss(p.Id, direction);
-                var id = panel.Id;
                 switch (panel.Content)
                 {
+                    case WatchlistPanel watchlist:
+                        watchlist.Selected += SelectInstrument;
+                        break;
                     case ChartPanel chart:
-                        chart.Selected += () => SelectChart(id);
-                        chart.IntervalChanged += interval => SetInterval(id, interval);
+                        chart.IntervalChanged += SetInterval;
                         break;
                     case OrderPanel order:
                         order.TypeChosen += ChooseType;
@@ -233,24 +221,25 @@ namespace SpatialTrading.Spread
 
         // ---------- selection and order ticket ----------
 
-        /// <summary>Selects a chart: its instrument drives the order book, the order ticket and the news ranking.</summary>
-        public void SelectChart(PanelId id)
+        /// <summary>Selects a watchlist instrument: the chart, the order book, the order ticket and the news ranking follow
+        /// it. An instrument outside <see cref="TraderCatalog.Charts"/> is ignored. 코스피 locks the ticket as an index.</summary>
+        public void SelectInstrument(InstrumentRef instrument)
         {
-            if (!IsChart(id)) return;
-            if (id != _selected)
+            if (instrument == null || !TraderCatalog.Charts.Contains(instrument)) return;
+            if (!instrument.Equals(_selected))
             {
-                _selected = id;
-                _ticket.Select(SelectedInstrument, _session);
+                _selected = instrument;
+                _ticket.Select(_selected, _session);
                 _preview = null;
             }
             Render();
         }
 
-        public void SetInterval(PanelId id, string interval)
+        public void SetInterval(string interval)
         {
-            if (!IsChart(id) || (interval != ChartPanel.Daily && interval != ChartPanel.FourHour)) return;
-            _intervals[id] = interval;
-            RenderPanel(id);
+            if (interval != ChartPanel.Daily && interval != ChartPanel.FourHour) return;
+            _interval = interval;
+            RenderPanel(PanelId.Chart);
         }
 
         private void ChooseType(OrderType type)
@@ -283,10 +272,10 @@ namespace SpatialTrading.Spread
             {
                 if (keyboard.rKey.wasPressedThisFrame) Reset();
                 if (keyboard.tKey.wasPressedThisFrame && _tray != null) _tray.Toggle();
-                if (keyboard.digit1Key.wasPressedThisFrame) SelectChart(ChartIds[0]);
-                if (keyboard.digit2Key.wasPressedThisFrame) SelectChart(ChartIds[1]);
-                if (keyboard.digit3Key.wasPressedThisFrame) SelectChart(ChartIds[2]);
-                if (keyboard.digit4Key.wasPressedThisFrame) SelectChart(ChartIds[3]);
+                if (keyboard.digit1Key.wasPressedThisFrame) SelectInstrument(TraderCatalog.Charts[0]);
+                if (keyboard.digit2Key.wasPressedThisFrame) SelectInstrument(TraderCatalog.Charts[1]);
+                if (keyboard.digit3Key.wasPressedThisFrame) SelectInstrument(TraderCatalog.Charts[2]);
+                if (keyboard.digit4Key.wasPressedThisFrame) SelectInstrument(TraderCatalog.Charts[3]);
             }
             if (!XRSettings.isDeviceActive) UpdateMouse();
         }
@@ -330,9 +319,9 @@ namespace SpatialTrading.Spread
             var before = _layout[id];
             var top = before.Y + before.Height;
             var r = _layout.Resize(id, width, height);
+            var cell = SpreadLayout.CellMetersFor(r.Plane);
             if (r.Width != before.Width || r.Height != before.Height)
-                r = _layout.Drop(id, r.Plane, (before.X + r.Width * .5f) * SpreadLayout.CellMeters,
-                    (top - r.Height * .5f) * SpreadLayout.CellMeters);
+                r = _layout.Drop(id, r.Plane, (before.X + r.Width * .5f) * cell, (top - r.Height * .5f) * cell);
             Apply(id, true);
             return r;
         }
@@ -454,20 +443,35 @@ namespace SpatialTrading.Spread
             {
                 switch (panel.Content)
                 {
+                    case WatchlistPanel watchlist:
+                    {
+                        var instruments = TraderCatalog.Charts;
+                        var inputs = new List<object> { _selected.Code, rect };
+                        foreach (var i in instruments)
+                        {
+                            inputs.Add(RenderMemo.Of(_market.Daily(i.Code)));
+                            inputs.Add(RenderMemo.Of(_market.Quote(i.Code)));
+                            inputs.Add(_market.MarketLabel(i.Code, ChartPanel.Daily));
+                            inputs.Add(_market.MarketLabel(i.Code));
+                        }
+                        if (Same(inputs.ToArray())) break;
+                        var rows = WatchlistView.From(instruments, _market.Daily, _market.Quote,
+                            code => _market.MarketLabel(code, ChartPanel.Daily), code => _market.MarketLabel(code), _selected);
+                        watchlist.Render(rows, rect);
+                        break;
+                    }
                     case ChartPanel chart:
                     {
-                        var instrument = InstrumentFor(id);
-                        var interval = IntervalOf(id);
+                        var instrument = _selected;
+                        var interval = _interval;
                         var series = interval == ChartPanel.FourHour ? _market.FourHour(instrument.Code) : _market.Daily(instrument.Code);
                         var quote = _market.Quote(instrument.Code);
                         // The quote leads the header only when it comes from the series' own market (NXT hours: 1D stays KRX).
                         var seriesMarket = _market.MarketLabel(instrument.Code, interval);
                         var quoteMarket = _market.MarketLabel(instrument.Code);
-                        var selected = id == _selected;
-                        if (Same(RenderMemo.Of(series), RenderMemo.Of(quote), interval, seriesMarket, quoteMarket, rect, selected)) break;
+                        if (Same(RenderMemo.Of(series), RenderMemo.Of(quote), instrument.Code, interval, seriesMarket, quoteMarket, rect)) break;
                         var view = ChartHeaderView.From(instrument, series, quote, interval, seriesMarket, quoteMarket);
                         chart.Render(view, series?.Value, interval, rect);
-                        chart.SetSelected(selected);
                         break;
                     }
                     case OrderBookPanel book:
@@ -527,6 +531,7 @@ namespace SpatialTrading.Spread
             {
                 if (!Physics.Raycast(ray, out var hit, 6f)) return;
                 _pressAt = at;
+                _pressPoint = hit.point;
                 var panel = hit.collider.GetComponentInParent<SpreadPanel>();
                 if (panel != null && panel.IsHandle(hit.collider))
                 {
@@ -558,9 +563,14 @@ namespace SpatialTrading.Spread
             switch (_drag)
             {
                 case MouseDrag.Move:
+                {
+                    // A click on 관심종목 picks the row under the press point (the body collider sits just behind the canvas).
+                    InstrumentRef row = null;
+                    var picked = click && _dragPanel.Content is WatchlistPanel watchlist && watchlist.TryRowAt(_pressPoint, out row);
                     _dragPanel.EndMove();
-                    if (click) SelectChart(_dragPanel.Id); // charts only; ignored elsewhere
+                    if (picked) SelectInstrument(row);
                     break;
+                }
                 case MouseDrag.Resize: _dragPanel.EndResize(); break;
                 case MouseDrag.Icon: _tray.EndIconDrag(_dragIcon); break;
             }

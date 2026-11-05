@@ -38,7 +38,7 @@ namespace SpatialTrading.Editor
         private const double DataTimeoutSeconds = 120;
         private const double RunTimeoutSeconds = 420;
         private const int Width = 1920, Height = 1080;
-        /// <summary>The capture eye: the pinned head pose stepped back and down so all eight panels share one 16:9 frame.</summary>
+        /// <summary>The capture eye: the pinned head pose stepped back and down so all six panels share one 16:9 frame.</summary>
         /// <summary>No pitch: the image plane stays parallel to every panel, so flat panels read as true rectangles.</summary>
         public static readonly Vector3 CameraOffset = new Vector3(0f, -0.23f, -0.55f);
         public const float CameraFieldOfView = 42f;
@@ -130,7 +130,7 @@ namespace SpatialTrading.Editor
                 {
                     case 0: // live data: every chart's daily series arrived, account and news are no longer loading
                         var placed = workspace.IsPlaced || elapsed > PlaceTimeoutSeconds;
-                        var ready = placed && SpreadWorkspace.ChartIds.All(id => workspace.Market.Daily(SpreadWorkspace.InstrumentFor(id).Code)?.Value != null)
+                        var ready = placed && TraderCatalog.Charts.All(i => workspace.Market.Daily(i.Code)?.Value != null)
                                     && workspace.Market.Balance().State != DataState.Loading
                                     && workspace.Market.News().State != DataState.Loading;
                         if (ready || elapsed > DataTimeoutSeconds)
@@ -140,14 +140,23 @@ namespace SpatialTrading.Editor
                             Next(); _stageAt = now + 2; // let the coalesced render and layout settle
                         }
                         break;
-                    case 1: if (elapsed > 0) { Capture(workspace, "a-default", "기본 배치 (트레이더 기본), 삼성전자 선택"); Next(); } break;
-                    case 2: if (elapsed > 0) { workspace.SelectChart(PanelId.ChartSkHynix); Next(); } break;
-                    case 3: if (elapsed > 1) { Capture(workspace, "b-skhynix", "SK하이닉스 선택: 호가 전환, 주문 잠금"); Next(); } break;
-                    case 4: if (elapsed > 0) { workspace.SelectChart(PanelId.ChartKospi); Next(); } break;
-                    case 5: if (elapsed > 1) { Capture(workspace, "c-kospi", "KOSPI 선택: 지수 · 호가 없음"); Next(); } break;
-                    case 6: if (elapsed > 0) { workspace.Resize(PanelId.ChartSamsung, 8, 9); Next(); } break;
-                    case 7: if (elapsed > 1) { Capture(workspace, "d-chart-large", "삼성전자 차트 8×9칸: 봉+거래량+가격·시간축"); Next(); } break;
-                    case 8: if (elapsed > 0) { workspace.Dismiss(PanelId.News); Next(); } break;
+                    case 1: if (elapsed > 0) { Capture(workspace, "a-default", "기본 배치 (트레이더 기본), 관심종목에서 삼성전자 선택"); Next(); } break;
+                    case 2: if (elapsed > 0) { workspace.SelectInstrument(TraderCatalog.SkHynix); Next(); } break;
+                    case 3: if (elapsed > 1) { Capture(workspace, "b-skhynix", "관심종목 SK하이닉스 선택: 차트·호가 전환, 주문 잠금"); Next(); } break;
+                    case 4: if (elapsed > 0) { workspace.SelectInstrument(TraderCatalog.Kospi); Next(); } break;
+                    case 5: if (elapsed > 1) { Capture(workspace, "c-kospi", "관심종목 코스피 선택: 차트에 지수, 호가 없음, 주문 잠금"); Next(); } break;
+                    case 6:
+                        if (elapsed > 0)
+                        {
+                            // The eye plane is full at the default spread: the balance makes room for the tall chart.
+                            workspace.SelectInstrument(TraderCatalog.Samsung);
+                            workspace.Dismiss(PanelId.Balance);
+                            workspace.Resize(PanelId.Chart, 8, 10);
+                            Next();
+                        }
+                        break;
+                    case 7: if (elapsed > 1) { Capture(workspace, "d-chart-large", "잔고를 치우고 삼성전자 차트를 8×10칸으로: 봉+거래량+가격·시간축"); Next(); } break;
+                    case 8: if (elapsed > 0) { workspace.Reset(); workspace.Dismiss(PanelId.News); Next(); } break;
                     case 9: if (elapsed > 0.15) { Capture(workspace, "e0-news-flying", "뉴스 치우는 중 (0.15 s: 날아가며 흐려짐)"); Next(); } break;
                     case 10: if (elapsed > 0.6) { if (tray != null) tray.Pin(); Next(); } break;
                     case 11: if (elapsed > 0.5) { Capture(workspace, "e-news-dismissed", "뉴스 치운 직후, 트레이(T)에 뉴스 아이콘"); Next(); } break;
@@ -218,7 +227,7 @@ namespace SpatialTrading.Editor
         }
 
         // Honesty labels and headers only; the account line is never read.
-        private static readonly string[] LabelNames = { "Title", "Status", "Hint", "Placeholder", "BadgeText", "Price", "PriceChange", "Empty", "ToastText", "LastPrice" };
+        private static readonly string[] LabelNames = { "Title", "Status", "Hint", "Placeholder", "BadgeText", "Price", "PriceChange", "Empty", "ToastText", "LastPrice", "Name" };
 
         private static Shot Describe(SpreadWorkspace workspace, string file, string note)
         {
@@ -235,7 +244,8 @@ namespace SpatialTrading.Editor
             {
                 if (!panel.gameObject.activeInHierarchy) continue;
                 var parts = panel.Content.GetComponentsInChildren<TMP_Text>(false)
-                    .Where(t => t.transform.parent == panel.Content.transform || t.name == "BadgeText" || t.name == "LastPrice" || t.name == "ToastText")
+                    .Where(t => t.transform.parent == panel.Content.transform || t.name == "BadgeText" || t.name == "LastPrice" || t.name == "ToastText"
+                                || t.transform.parent.name == "Watchlist row")
                     .Where(t => LabelNames.Contains(t.name) && !string.IsNullOrEmpty(t.text))
                     .Select(t => t.name + "=" + t.text);
                 shot.Labels.Add(panel.Id + " " + workspace.Layout[panel.Id] + " | " + string.Join(" | ", parts));

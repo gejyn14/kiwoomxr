@@ -228,7 +228,7 @@ namespace SpatialTrading.Editor
                 throw new BuildFailedException("Could not save Trader Spread scene.");
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
-            Debug.Log("[M1] Trader Spread scene generated: 8 grabbable panels, palm tray, vendor poke/ray/grab interactors.");
+            Debug.Log("[M1] Trader Spread scene generated: 6 grabbable panels (watchlist, chart, order book, news, balance on the eye plane; order on the hand plane), palm tray, vendor poke/ray/grab interactors.");
         }
 
         /// <summary>
@@ -241,6 +241,7 @@ namespace SpatialTrading.Editor
         {
             var root = new GameObject("Panel " + id);
             root.transform.SetPositionAndRotation(AuthoringHead + SpreadWorkspace.LocalCenter(rect), Quaternion.identity);
+            root.transform.localScale = Vector3.one * SpreadLayout.ScaleFor(rect.Plane); // hand plane: 0.7×
             var size = HoloStyle.SizeFor(rect);
 
             var canvasObject = new GameObject("Surface", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster), typeof(CanvasGroup));
@@ -264,7 +265,9 @@ namespace SpatialTrading.Editor
                 case PanelId.News: content = holo.AddComponent<NewsPanel>(); break;
                 case PanelId.Balance: content = holo.AddComponent<BalancePanel>(); break;
                 case PanelId.Order: content = holo.AddComponent<OrderPanel>(); break;
-                default: content = holo.AddComponent<ChartPanel>(); break;
+                case PanelId.Watchlist: content = holo.AddComponent<WatchlistPanel>(); break;
+                case PanelId.Chart: content = holo.AddComponent<ChartPanel>(); break;
+                default: throw new BuildFailedException("No panel content for " + id);
             }
             content.Configure(_font); // fixed children are saved with the scene, so Validate can measure them
 
@@ -515,12 +518,14 @@ namespace SpatialTrading.Editor
                 throw new BuildFailedException("Android must use ARM64 IL2CPP.");
 
             var panels = Object.FindObjectsByType<SpreadPanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            if (panels.Length != 8) throw new BuildFailedException("Expected 8 SpreadPanels, found " + panels.Length + ".");
+            if (panels.Length != 6) throw new BuildFailedException("Expected 6 SpreadPanels, found " + panels.Length + ".");
             foreach (PanelId id in Enum.GetValues(typeof(PanelId)))
                 if (panels.Count(p => p.Id == id) != 1) throw new BuildFailedException("Expected exactly one panel for " + id + ".");
+            var defaults = SpreadLayout.TraderDefault();
             foreach (var panel in panels)
             {
                 if (panel.Content == null || panel.Handle == null) throw new BuildFailedException("Unbound SpreadPanel " + panel.name);
+                ValidateDefaultPlacement(panel, defaults[panel.Id]);
                 if (!Flat(panel.transform.rotation) || !Flat(panel.GetComponentInChildren<Canvas>(true).transform.rotation))
                     throw new BuildFailedException("Panel " + panel.name + " is pitched or rolled; spread panels are flat and front-facing.");
                 var canvas = panel.GetComponentInChildren<Canvas>(true);
@@ -557,6 +562,34 @@ namespace SpatialTrading.Editor
             if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().isDirty)
                 throw new BuildFailedException("Scene setup changed while loading. Review/save it, then validate again.");
             Debug.Log("[M1] Static scene/build validation passed. This does not validate headset behavior.");
+        }
+
+        /// <summary>
+        /// The generated panel sits at its default rect: authoring-head offset = <see cref="SpreadWorkspace.LocalCenter"/>,
+        /// canvas size = cells × 50 mm, scale = the plane's (hand 0.7), depth 1.10 m (eye) or 0.45 m (hand), and the content
+        /// type matches the id.
+        /// </summary>
+        private static void ValidateDefaultPlacement(SpreadPanel panel, PanelRect rect)
+        {
+            var offset = panel.transform.position - AuthoringHead;
+            if ((offset - SpreadWorkspace.LocalCenter(rect)).sqrMagnitude > 1e-8f)
+                throw new BuildFailedException(panel.name + " is not at its default rect " + rect + ".");
+            var eye = rect.Plane == SpatialTrading.Domain.Plane.Eye;
+            var depth = eye ? 1.10f : 0.45f;
+            if (Mathf.Abs(offset.z - depth) > 1e-4f)
+                throw new BuildFailedException(panel.name + " should sit " + depth.ToString("0.00") + " m ahead; found " + offset.z.ToString("0.000") + " m.");
+            // The runtime re-applies SpreadLayout.ScaleFor on every Place, so check both the scene and the rule.
+            var scale = eye ? 1f : 0.7f;
+            if ((panel.transform.localScale - Vector3.one * scale).sqrMagnitude > 1e-8f || !Mathf.Approximately(SpreadLayout.ScaleFor(rect.Plane), scale))
+                throw new BuildFailedException(panel.name + " should have scale " + scale + "; found " + panel.transform.localScale.x + ".");
+            var canvas = (RectTransform)panel.GetComponentInChildren<Canvas>(true).transform;
+            if (canvas.sizeDelta != HoloStyle.SizeFor(rect))
+                throw new BuildFailedException(panel.name + " canvas is not " + rect.Width + " × " + rect.Height + " cells.");
+            var kind = panel.Id == PanelId.Watchlist ? typeof(WatchlistPanel) : panel.Id == PanelId.Chart ? typeof(ChartPanel)
+                : panel.Id == PanelId.OrderBook ? typeof(OrderBookPanel) : panel.Id == PanelId.News ? typeof(NewsPanel)
+                : panel.Id == PanelId.Balance ? typeof(BalancePanel) : typeof(OrderPanel);
+            if (panel.Content.GetType() != kind)
+                throw new BuildFailedException(panel.name + " carries " + panel.Content.GetType().Name + ", expected " + kind.Name + ".");
         }
 
         /// <summary>Pitch and roll are exactly zero (yaw is free).</summary>
